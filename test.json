@@ -1,0 +1,146 @@
+{
+  "status": "success",
+  "files_analyzed": [
+    "tech_spec.pdf",
+    "proposal.pdf"
+  ],
+  "tech_analysis": {
+    "project_name": "LegacyApp / FutureScale Enterprise Platform",
+    "critical_gaps": [
+      {
+        "feature": "High Availability & Redundancy",
+        "missing_component": "Disaster Recovery and Failover Logic",
+        "risk_level": "High",
+        "recommendation": "Reconcile the infrastructure architecture. A single t2.micro instance with a local SQLite file cannot physically support a 99.999% SLA or 3-zone failover.",
+        "source_reference": "In 'tech_spec.pdf', section 2 states 'Redundancy: None. If the server crashes, the site goes down,' which contradicts 'proposal.pdf' section 2 promising 'Uptime SLA: 99.999%' and 'Automated failover across 3 Availability Zones.'"
+      },
+      {
+        "feature": "Scalability",
+        "missing_component": "Load Balancing and Auto-scaling configuration",
+        "risk_level": "High",
+        "recommendation": "Align the technical capacity with business promises. 10 concurrent users is a developer-tier limit, while 50,000 is an enterprise-tier requirement.",
+        "source_reference": "In 'tech_spec.pdf', section 4 specifies 'The server can handle approximately 10 concurrent users,' whereas 'proposal.pdf' section 2 claims the system 'Supports 50,000+ concurrent users with auto-scaling.'"
+      },
+      {
+        "feature": "Authentication & Identity Management",
+        "missing_component": "SSO Integration Logic and Token Management",
+        "risk_level": "High",
+        "recommendation": "Define the OIDC/SAML provider and integration path. The technical spec lacks the infrastructure to support the Enterprise SSO promised in the proposal.",
+        "source_reference": "In 'tech_spec.pdf', section 3 explicitly states 'No 2FA or SSO implementation is planned for Phase 1,' but 'proposal.pdf' section 3 claims 'Enterprise SSO (Okta/Azure AD) included.'"
+      },
+      {
+        "feature": "Data Persistence and Security",
+        "missing_component": "Encryption at rest and Backup Strategy",
+        "risk_level": "High",
+        "recommendation": "Migrate from SQLite to a managed database service (RDS) to support SOC2 compliance and encryption at rest.",
+        "source_reference": "In 'tech_spec.pdf', section 2 defines storage as 'SQLite file stored locally on the server disk,' while 'proposal.pdf' section 3 claims 'SOC2 Type II Compliant' and 'All data is encrypted at rest.'"
+      },
+      {
+        "feature": "Error Handling & Resilience",
+        "missing_component": "Timeout and Error State definitions (Happy Path Bias)",
+        "risk_level": "Medium",
+        "recommendation": "Define behavior for when the 10-user limit is hit beyond 'timing out'. The system lacks a circuit breaker or queueing mechanism for excess traffic.",
+        "source_reference": "In 'tech_spec.pdf', section 4 mentions 'Requests exceeding this limit will time out,' but provides no logic for graceful degradation or error messaging for the user."
+      }
+    ],
+    "ambiguity_score": 95
+  },
+  "legal_analysis": {
+    "leverage_score": 95,
+    "favor_direction": "Vendor",
+    "trap_clauses": [
+      {
+        "clause_snippet": "The Vendor reserves the right to increase pricing by unlimited % annually. (proposal.pdf)",
+        "risk_explanation": "This is a blank check. The vendor can effectively force a contract termination or bankrupt the client by doubling or tripling the fee in year two without any recourse.",
+        "severity": "Critical",
+        "redline_suggestion": {
+          "original_text": "The Vendor reserves the right to increase pricing by unlimited % annually.",
+          "proposed_text": "The Vendor may increase the annual fee by a maximum of the Consumer Price Index (CPI) or 3%, whichever is lower, provided that sixty (60) days' written notice is given prior to the renewal date.",
+          "negotiation_argument": "Unlimited price escalation is commercially non-standard and renders the contract's long-term value impossible to forecast. We require a cap linked to inflation to ensure predictable budgeting."
+        }
+      },
+      {
+        "clause_snippet": "All intellectual property (IP) developed remains the sole property of the Vendor. (proposal.pdf)",
+        "risk_explanation": "The client is paying a premium ($150k) for an 'MVP' development but will own nothing. This creates total vendor lock-in; if the relationship ends, the client loses the entire codebase.",
+        "severity": "Critical",
+        "redline_suggestion": {
+          "original_text": "All intellectual property (IP) developed remains the sole property of the Vendor.",
+          "proposed_text": "All deliverables and intellectual property created specifically for the 'LegacyApp' project shall be considered 'work made for hire' and shall be the sole and exclusive property of the Client upon payment.",
+          "negotiation_argument": "For a bespoke implementation cost of $150k, the Client must own the work product. Vendor-retained IP is only acceptable for off-the-shelf SaaS, not custom project development."
+        }
+      },
+      {
+        "clause_snippet": "Uptime SLA: 99.999% (Five Nines). (proposal.pdf)",
+        "risk_explanation": "This is a technical impossibility and a legal 'hallucination.' The Tech Spec (tech_spec.pdf) explicitly defines a single t2.micro instance with no redundancy and a local SQLite database. 99.999% uptime requires multi-region failover which the underlying architecture lacks.",
+        "severity": "High",
+        "redline_suggestion": {
+          "original_text": "Uptime SLA: 99.999% (Five Nines).",
+          "proposed_text": "Vendor guarantees 99.9% uptime, provided that the underlying infrastructure defined in tech_spec.pdf is upgraded to a High Availability configuration at Vendor's expense to meet this guarantee.",
+          "negotiation_argument": "The proposal's SLA is physically impossible given the t2.micro/SQLite spec. The vendor is promising enterprise performance on hobbyist hardware; this must be reconciled or the vendor must cover the AWS costs for the necessary redundancy."
+        }
+      }
+    ],
+    "negotiation_tips": [
+      "The vendor has clearly submitted a 'canned' enterprise proposal without reading the Tech Spec. Use the discrepancy between the 10-user capacity limit in the Spec and the 50,000-user promise in the Proposal to humiliate them into a price reduction.",
+      "Demand a breakdown of the $150,000 fee. A t2.micro instance costs roughly $100/year; the markup here is over 100,000% for the infrastructure component.",
+      "The 'FutureScale' branding suggests they are trying to sell you a product you didn't ask for. Re-tether the contract to the 'LegacyApp' MVP requirements.",
+      "The SOC2 and SSO claims are likely fraudulent if they are building on the SQLite/local password spec provided. Demand a copy of their latest SOC2 Type II audit report immediately to call their bluff."
+    ]
+  },
+  "final_synthesis": {
+    "CONTRADICTIONS": [
+      {
+        "subject": "Availability & Uptime",
+        "tech_reality": "Single AWS t2.micro instance with no redundancy; server crash equals total downtime.",
+        "business_promise": "99.999% SLA (Five Nines) with automated failover across 3 Availability Zones.",
+        "severity": "Critical"
+      },
+      {
+        "subject": "Scalability & Load",
+        "tech_reality": "Hard limit of approximately 10 concurrent users due to server constraints.",
+        "business_promise": "Supports 50,000+ concurrent users with auto-scaling functionality.",
+        "severity": "Critical"
+      },
+      {
+        "subject": "Security & Identity",
+        "tech_reality": "Local password storage with no 2FA or SSO implementation planned.",
+        "business_promise": "SOC2 Type II Compliant with Enterprise SSO (Okta/Azure AD) included.",
+        "severity": "High"
+      },
+      {
+        "subject": "Data Persistence",
+        "tech_reality": "SQLite file stored locally on a single server disk.",
+        "business_promise": "All data encrypted at rest and in transit (SOC2 standard).",
+        "severity": "High"
+      }
+    ],
+    "STRATEGIC_SYNTHESIS": "This deal represents a 'Predatory Hallucination.' The vendor is attempting to sell a hobbyist-tier technical architecture (worth approx. $100/year in infra costs) as a mission-critical Enterprise solution for $150,000. The legal risks significantly exacerbate the tech gaps: the vendor is charging a premium for custom work while retaining all IP ownership, and the '99.999% SLA' is a legal liability because the current technical spec makes achieving that SLA mathematically impossible. Accepting this proposal as-is would result in immediate breach of contract, zero scalability, and total vendor lock-in with no ownership of the assets.",
+    "REALITY_DIAGRAM_MERMAID": "graph TD\n    subgraph Business_Promise [The Promise: FutureScale]\n        P1[99.999% SLA]\n        P2[50k Users]\n        P3[SOC2 / SSO]\n    end\n\n    subgraph Tech_Reality [The Reality: LegacyApp]\n        R1[t2.micro Single Instance]\n        R2[SQLite Local File]\n        R3[10 User Max]\n    end\n\n    subgraph Legal_Traps [Legal Risks]\n        L1[Unlimited Price Hikes]\n        L2[Vendor Owns IP]\n        L3[Non-Standard SLA Liability]\n    end\n\n    P1 -- \"Contradicts\" --> R1\n    P2 -- \"Exceeds Capacity by 5000%\" --> R3\n    P3 -- \"No Logic Exists\" --> R2\n    R1 -- \"Single Point of Failure\" --> L3\n    R2 -- \"No Encryption/Backup\" --> L3\n    Business_Promise -- \"$150k Cost\" --> L2",
+    "PATCH_PACK": {
+      "jira_tickets": [
+        {
+          "summary": "INFRA: Migrate from t2.micro to Multi-AZ RDS/EKS Cluster",
+          "description": "The current tech spec defines a single instance and SQLite. To meet the proposed 99.999% SLA, we must implement a High Availability (HA) architecture across 3 Availability Zones.",
+          "priority": "Highest"
+        },
+        {
+          "summary": "AUTH: Implement OIDC/SAML for Enterprise SSO",
+          "description": "Replace local password storage in SQLite with Okta/Azure AD integration as promised in the business proposal.",
+          "priority": "High"
+        },
+        {
+          "summary": "SECURITY: Implement Encryption at Rest for SOC2 Compliance",
+          "description": "Move data from local SQLite to an encrypted RDS instance to meet SOC2 requirements mentioned in the proposal.",
+          "priority": "High"
+        },
+        {
+          "summary": "PERF: Load Test and Implement Auto-scaling Groups",
+          "description": "Configure ALB and ASG to scale from 10 to 50,000 concurrent users; the current single-server direct-IP setup is a hard bottleneck.",
+          "priority": "Highest"
+        }
+      ],
+      "negotiation_email": "Subject: Critical Discrepancies: 'FutureScale' Proposal vs. 'LegacyApp' Technical Specification\n\nDear Vendor Team,\n\nWe have completed our review of the 'FutureScale' Enterprise Platform proposal. While we appreciate the high performance metrics quoted, we have identified several critical 'hallucinations' between your Business Proposal and the Technical Specification (LegacyApp) that must be resolved before proceeding.\n\n1. Technical Incompatibility: You have proposed a 99.999% SLA and 50,000 concurrent user capacity, yet the tech spec defines a single t2.micro instance and a local SQLite database. This architecture cannot physically support your uptime or load guarantees. We require a revised technical architecture that includes Multi-AZ failover and managed database services at no additional cost to meet your promised SLA.\n\n2. Security & Compliance: Your proposal claims SOC2 Type II compliance and Enterprise SSO, while the technical spec lists local password storage and no encryption. We require the immediate provision of your latest SOC2 report and a detailed integration plan for Okta/Azure AD.\n\n3. Intellectual Property & Pricing: A $150,000 fee for a project utilizing $10/month infrastructure is only justifiable if the Client retains full IP ownership. We have redlined the 'IP Ownership' clause to reflect a 'Work Made for Hire' arrangement. Furthermore, we require the 'Unlimited Pricing Increase' clause to be capped at 3% per annum.\n\nPlease find the attached redlines. We are open to a meeting once these fundamental contradictions are addressed in a revised Technical Design Document.\n\nRegards,\n\nSpecGap\nChief Technology & Legal Officer"
+    }
+  },
+  "errors": []
+}

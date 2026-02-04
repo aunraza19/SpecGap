@@ -1,0 +1,118 @@
+Project Requirements Document (PRD)
+Project Name
+SpecGap (Advanced Edition)
+Type
+AI-Powered Audit & Compliance Tool
+Status
+Hackathon MVP Phase
+Goal
+To create an automated "Chief Technology & Legal Officer" that finds gaps in specs, risks in proposals, and security holes in architecture.
+
+1. Executive Summary
+SpecGap is an intelligent audit system that analyzes technical documentation, business proposals, and system architectures simultaneously. Unlike standard chatbots that just summarize text, SpecGap uses Gemini 1.5 Pro to perform "Absence Detection"—identifying what is missing rather than just reading what is there.
+It solves three critical failures in software delivery:
+    1. Undefined Tech Specs (leading to bugs).
+    2. Unbalanced Business Terms (leading to financial loss).
+    3. Hidden Security Risks (leading to liability).
+
+2. Problem Statement
+Building software involves three distinct documents that rarely talk to each other: the Technical Spec, the Business Proposal, and the Security Protocols.
+    • The Conflict: Sales teams agree to features (in the proposal) that engineers haven't planned for (in the spec).
+    • The Risk: Proposals often contain "trap clauses" (e.g., vendor owns the data) that developers overlook.
+    • The Gap: Humans are bad at noticing what isn't there. If a login system is described but "rate limiting" isn't mentioned, a human reviewer assumes it's fine—SpecGap flags it as a crash risk.
+
+3. Functional Requirements (The 4 Core Engines)
+Engine A: The Tech Gap Detector
+    • Input: Requirements Doc (PDF/MD), API Spec (JSON/YAML).
+    • Function: Scans for logic holes and undefined behaviors.
+    • Example Output:
+"Critical Gap: The 'Payment Success' flow is defined, but 'Payment Failure' behavior is missing. Recommended Action: Define retry logic and error messages."
+Engine B: The "Benefit Balance" System (Business Logic)
+    • Input: Business Proposal, Statement of Work (SOW), Contract.
+    • Function: Calculates a "Leverage Score" (Client vs. Vendor) and detects financial traps.
+    • Visualization: A "Seesaw" or Progress Bar showing who the deal favors (e.g., 70% Vendor / 30% Client).
+    • Example Output:
+"Risk Detected: Proposal allows Vendor to increase pricing by unlimited % after Year 1. Suggestion: Cap increase at 5%."
+Engine C: The Security & Risk Guardian
+    • Input: System Architecture Diagram (Image), Compliance Docs.
+    • Function: Flags missing security protocols and liability risks.
+    • Example Output:
+"Vulnerability: User Data is stored, but 'Data Retention Policy' is undefined in the contract. You may be liable for GDPR violations."
+Engine D: The Cross-Check Engine (Unique Feature)
+    • Function: Compares the Business Proposal against the Tech Spec.
+    • Why: To find "Scope Creep" or "Impossible Promises."
+    • Example Output:
+"Conflict: The Proposal promises '99.99% Uptime' (Section 4), but the Tech Spec uses a single-server architecture which cannot support this."
+
+4. Technical Stack
+Component
+Tool / Technology
+Purpose
+LLM Model
+Gemini 1.5 Pro
+Chosen for its 1M+ token context window to read massive contracts and specs at once.
+Backend
+Python (FastAPI)
+High-performance API to handle file uploads and Gemini requests.
+Frontend
+Streamlit (or React)
+Rapid UI development to visualize the "Benefit Seesaw" and Audit Reports.
+Vision
+Gemini Vision
+To analyze architecture diagrams and screenshots.
+File Parsing
+PyPDF2 / pdfplumber
+To extract text from PDF contracts.
+OCR
+EasyOCR (Optional)
+If analyzing scanned paper documents.
+
+5. System Architecture & Workflow
+    1. User Upload:
+        a. User uploads three files: Tech_Spec.pdf, Proposal.pdf, Architecture.png.
+    2. Preprocessing:
+        a. Python script extracts text from PDFs.
+        b. Images are encoded for Gemini Vision.
+    3. Parallel Processing (The "Three-Lens" Analysis):
+        a. Prompt 1 (Tech): sent to Gemini with context: "Act as a Senior Engineer..."
+        b. Prompt 2 (Business): sent to Gemini with context: "Act as a ruthless Lawyer..."
+        c. Prompt 3 (Cross-Check): sent to Gemini with context: "Compare these two docs..."
+    4. Structured Output:
+        a. Gemini returns JSON data containing risks, missing_items, and benefit_score.
+    5. Dashboard Render:
+        a. Frontend parses JSON to display the Red/Green flags and the "Deal Balance" chart.
+
+6. Development Roadmap (Hackathon Plan)
+Phase 1: The Core (Hours 1-6)
+    • Set up FastAPI backend.
+    • Integrate Gemini API Key.
+    • Build basic "Upload PDF" function.
+    • Create the "System Prompts" for Tech and Business analysis.
+Phase 2: The Visuals (Hours 6-12)
+    • Build Streamlit Dashboard.
+    • Implement the "Benefit Seesaw" Chart (Visualizing the 70/30 split).
+    • Display the text analysis results in a clean list format.
+Phase 3: The Cross-Check (Hours 12-18)
+    • Implement the logic that sends both documents to Gemini at once.
+    • Test with conflicting documents (e.g., a spec that says "SQL" vs a proposal that says "NoSQL").
+Phase 4: Polish (Final Hours)
+    • Add "One-Click Fix" button (Gemini generates an email to send to the vendor).
+    • Create sample dummy documents for the Demo.
+
+7. Key Differentiators (For Judges)
+    • Not a Chatbot: It does not chat. It audits.
+    • Multi-Modal: Reads diagrams + Text.
+    • Cross-Document Intelligence: It finds contradictions between files, which no simple GPT-wrapper does.
+    • Actionable: It doesn't just complain; it writes the email to fix the contract.
+
+8. Sample System Prompt (Draft)
+This is the core instruction sent to Gemini:
+Plaintext
+Role: You are SpecGap, an expert Technical & Legal Auditor.
+Task: Analyze the attached [Technical Spec] and [Business Proposal].
+
+1. ABSENCE DETECTION: List every technical requirement mentioned but not defined (e.g., "Auth" mentioned but no "OAuth/JWT" specified).
+2. BENEFIT ANALYSIS: Score the Business Proposal on a scale of 0-100 (0 = Client Favored, 100 = Vendor Favored). Explain why.
+3. CONTRADICTION CHECK: Does the Proposal promise features that the Spec does not contain?
+
+Return output in JSON format with keys: 'tech_gaps', 'business_risks', 'leverage_score'.
