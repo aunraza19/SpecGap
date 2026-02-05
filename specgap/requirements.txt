@@ -1,0 +1,28 @@
+fastapi==0.109.0
+uvicorn==0.27.0
+python-multipart==0.0.9
+google-generativeai==0.3.2
+pdfplumber==0.10.3
+pillow==10.2.0
+python-dotenv==1.0.1
+pydantic>=2.6.0
+
+# OCR Support for scanned PDFs
+pytesseract==0.3.10
+pdf2image==1.16.3
+
+# Database & Persistence
+sqlalchemy==2.0.25
+aiosqlite==0.19.0
+
+# DataFrame & Tables
+pandas==2.2.0
+tabulate==0.9.0
+
+# DOCX Support
+python-docx==1.1.0
+
+# Agentic Workflow
+langgraph
+langchain
+langchain-google-genai

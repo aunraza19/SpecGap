@@ -1,0 +1,283 @@
+{
+  "status": "success",
+  "mode": "full_spectrum",
+  "files_analyzed": [
+    "tech_spec.pdf"
+  ],
+  "domain": "Software Engineering",
+  "council_verdict": {
+    "flashcards": [
+      {
+        "id": "GC-DATA-001",
+        "card_type": "Risk",
+        "title": "Data Integrity & Spoliation",
+        "description": "Local SQLite storage lacks automated backups, violating data retention laws and Sarbanes-Oxley internal controls. Server failure results in permanent, irrecoverable data loss and legal liability.",
+        "fix_action": "Mandate Managed RDS",
+        "severity": "Critical",
+        "swipe_right_payload": "Vendor shall migrate all persistent data to a managed database service (e.g., AWS RDS) with automated daily snapshots and 30-day point-in-time recovery (PITR) enabled to ensure regulatory compliance.",
+        "source_agent": "legal"
+      },
+      {
+        "id": "GC-SEC-002",
+        "card_type": "Risk",
+        "title": "Cyber-Insurance Eligibility",
+        "description": "Lack of MFA and SSO fails the minimum 'Security by Design' standards required for cyber-insurance. A breach under this architecture would likely void our coverage, creating total financial exposure.",
+        "fix_action": "Require MFA & SSO",
+        "severity": "High",
+        "swipe_right_payload": "The Application must integrate with the Company’s Identity Provider (IdP) via SAML 2.0 or OIDC, and Multi-Factor Authentication (MFA) must be enforced for all user roles as a condition of deployment.",
+        "source_agent": "legal"
+      },
+      {
+        "id": "GC-AVAIL-003",
+        "card_type": "Risk",
+        "title": "Uptime Warranty Breach",
+        "description": "A single burstable t2.micro instance is a Single Point of Failure (SPOF) with unpredictable performance. We cannot legally defend our uptime SLAs or 'Reasonable Availability' clauses under this design.",
+        "fix_action": "Redundant Multi-AZ Hosting",
+        "severity": "Critical",
+        "swipe_right_payload": "Service shall be hosted in a high-availability configuration across at least two Availability Zones (Multi-AZ) using an Elastic Load Balancer (ELB) and non-burstable compute instances (M-series or higher).",
+        "source_agent": "legal"
+      },
+      {
+        "id": "GC-FIT-004",
+        "card_type": "Risk",
+        "title": "Non-Conforming MVP",
+        "description": "The 10-user capacity cap renders the product 'unfit for purpose' for enterprise operations. Legally, this constitutes a delivery of non-conforming goods and creates a 'sunk cost' trap.",
+        "fix_action": "Enforce Scaling Standards",
+        "severity": "High",
+        "swipe_right_payload": "Architecture must support horizontal scalability; Vendor shall provide load test certification demonstrating stable performance for a minimum of 500 concurrent users before final acceptance and payment.",
+        "source_agent": "legal"
+      },
+      {
+        "id": "COO_001_SPOF",
+        "card_type": "Operational Risk",
+        "title": "Eliminate Single Point of Failure",
+        "description": "The current t2.micro setup provides zero redundancy and guaranteed downtime during hardware failure. This constitutes a material weakness in business continuity controls.",
+        "fix_action": "Implement Multi-AZ Redundancy",
+        "severity": "CRITICAL",
+        "swipe_right_payload": "Upgrade infrastructure to include an Elastic Load Balancer (ELB) and an Auto-Scaling Group (ASG) across multiple Availability Zones to meet standard Uptime SLAs.",
+        "source_agent": "business"
+      },
+      {
+        "id": "COO_002_DATA",
+        "card_type": "Compliance Risk",
+        "title": "Protect Production Data",
+        "description": "Local SQLite storage lacks automated backups and persistence, risking total, irrecoverable data loss. This violates GDPR/CCPA data retention and disaster recovery mandates.",
+        "fix_action": "Migrate to Managed RDS",
+        "severity": "CRITICAL",
+        "swipe_right_payload": "Decommission local SQLite storage and migrate to AWS RDS with automated daily snapshots and Multi-AZ replication enabled to ensure data integrity and insurance eligibility.",
+        "source_agent": "business"
+      },
+      {
+        "id": "COO_003_IAM",
+        "card_type": "Security Risk",
+        "title": "Fix Authentication Vulnerabilities",
+        "description": "Local password storage without MFA/SSO is a 'substandard' framework that fails corporate procurement and SOC2 standards. This increases liability for credential-based attacks.",
+        "fix_action": "Mandate MFA and SSO",
+        "severity": "HIGH",
+        "swipe_right_payload": "Integrate an enterprise Identity Provider (IdP) such as AWS Cognito or Okta to enforce Multi-Factor Authentication (MFA) and enable SAML/OIDC Single Sign-On.",
+        "source_agent": "business"
+      },
+      {
+        "id": "COO_004_SCALE",
+        "card_type": "Strategic Risk",
+        "title": "Remove 10-User Capacity Cap",
+        "description": "The current architecture is hard-capped at 10 users, creating a 'sunk cost' trap. The Cost-to-Acquire-Customer (CAC) will exceed the system's ability to generate revenue.",
+        "fix_action": "Architect for Horizontal Scaling",
+        "severity": "HIGH",
+        "swipe_right_payload": "Refactor the application to a stateless architecture and replace the t2.micro instance with a scalable compute tier capable of supporting enterprise-level concurrent user loads.",
+        "source_agent": "business"
+      },
+      {
+        "id": "COO_005_NET",
+        "card_type": "Financial Risk",
+        "title": "Secure Network Perimeter",
+        "description": "Direct IP exposure without a WAF or SSL/TLS leads to 'Denial of Wallet' via DDoS and man-in-the-middle attacks. Direct IPs are also blocked by enterprise firewalls.",
+        "fix_action": "Deploy WAF and SSL",
+        "severity": "HIGH",
+        "swipe_right_payload": "Route traffic through AWS CloudFront with a Web Application Firewall (WAF) enabled and provision managed SSL/TLS certificates via AWS Certificate Manager (ACM).",
+        "source_agent": "business"
+      },
+      {
+        "id": "FIN-001",
+        "card_type": "Risk",
+        "title": "Material Weakness: Data Integrity",
+        "description": "Local SQLite storage lacks persistence and automated backups, creating a high probability of irrecoverable data loss. This violates internal financial controls and data retention mandates.",
+        "fix_action": "Migrate to Managed RDS",
+        "severity": "Critical",
+        "swipe_right_payload": "Replace local SQLite with AWS RDS (PostgreSQL/MySQL) featuring Multi-AZ deployment and automated 35-day backup retention to satisfy audit and compliance requirements.",
+        "source_agent": "finance"
+      },
+      {
+        "id": "FIN-002",
+        "card_type": "Risk",
+        "title": "Cyber-Insurance Ineligibility",
+        "description": "The absence of Multi-Factor Authentication (MFA) and the use of local password storage likely voids our cybersecurity insurance policy. This exposes the firm to unmitigated breach liabilities.",
+        "fix_action": "Mandate SSO & MFA",
+        "severity": "High",
+        "swipe_right_payload": "Enforce OIDC/SAML integration with a corporate Identity Provider (IdP) and mandate MFA for all user roles to maintain insurance eligibility and SOC2 readiness.",
+        "source_agent": "finance"
+      },
+      {
+        "id": "FIN-003",
+        "card_type": "Risk",
+        "title": "Sunk Cost & Capital Inefficiency",
+        "description": "The 10-user capacity cap is a 'false economy.' The current build cannot be evolved and must be discarded to scale, resulting in a 100% loss of initial development OPEX.",
+        "fix_action": "Implement Scalable Compute",
+        "severity": "High",
+        "swipe_right_payload": "Refactor application to a stateless architecture using an Auto-Scaling Group (ASG) and Elastic Load Balancer (ELB) to ensure the product is fit for commercial purpose.",
+        "source_agent": "finance"
+      },
+      {
+        "id": "FIN-004",
+        "card_type": "Risk",
+        "title": "Denial of Wallet Exposure",
+        "description": "Direct IP exposure without a WAF allows for trivial DDoS attacks. This leads to 'Denial of Wallet' via unmonitored AWS overage charges and immediate business interruption.",
+        "fix_action": "Deploy WAF & CloudFront",
+        "severity": "High",
+        "swipe_right_payload": "Provision AWS CloudFront with WAF enabled and configure AWS Shield to protect against volumetric attacks and mitigate financial risk from infrastructure overages.",
+        "source_agent": "finance"
+      },
+      {
+        "id": "FIN-005",
+        "card_type": "Risk",
+        "title": "Unpredictable Operating Costs",
+        "description": "The t2.micro 'burstable' tier performance drops to an unusable baseline once credits are exhausted. This creates unpredictable service levels and hidden costs during peak load.",
+        "fix_action": "Standardize on T3/M-Class",
+        "severity": "Medium",
+        "swipe_right_payload": "Transition compute resources to T3-Unlimited or M-class instances to ensure predictable performance baselines and eliminate throttling-related service failures.",
+        "source_agent": "finance"
+      }
+    ]
+  },
+  "deep_analysis": {
+    "tech_audit": {
+      "project_name": "LegacyApp (MVP)",
+      "critical_gaps": [
+        {
+          "feature": "Data Persistence and Recovery",
+          "missing_component": "Backup and Disaster Recovery Plan",
+          "risk_level": "High",
+          "recommendation": "Implement an automated off-instance backup for the SQLite database (e.g., S3 sync) to prevent total data loss in the event of disk failure or instance termination.",
+          "source_reference": "In 'tech_spec.pdf', section 2 (Architecture) states 'Database: SQLite file stored locally on the server disk' and 'Redundancy: None. If the server crashes, the site goes down,' but fails to address data recovery after a crash."
+        },
+        {
+          "feature": "Authentication Security",
+          "missing_component": "Password Hashing and Salting Logic",
+          "risk_level": "High",
+          "recommendation": "Explicitly define the hashing algorithm (e.g., Argon2 or BCrypt). Storing raw or poorly hashed passwords in a local file-based DB is a significant security liability.",
+          "source_reference": "In 'tech_spec.pdf', section 3 (Authentication) states 'User passwords are stored in the local database' without specifying encryption or hashing standards."
+        },
+        {
+          "feature": "Transport Security",
+          "missing_component": "SSL/TLS Encryption",
+          "risk_level": "High",
+          "recommendation": "Assign a domain and implement SSL (e.g., Let's Encrypt). A 'Direct IP connection' implies unencrypted HTTP, which exposes user credentials mentioned in Section 3 to packet sniffing.",
+          "source_reference": "In 'tech_spec.pdf', section 2 (Architecture) mentions 'Load Balancing: Not applicable (Direct IP connection),' which suggests the absence of an SSL termination point or HTTPS configuration."
+        },
+        {
+          "feature": "API Concurrency Handling",
+          "missing_component": "Graceful Degradation / Request Queuing",
+          "risk_level": "Medium",
+          "recommendation": "Implement a reverse proxy (like Nginx) or a circuit breaker pattern to handle requests beyond the 10-user limit, rather than allowing hard timeouts which lead to a poor user experience.",
+          "source_reference": "In 'tech_spec.pdf', section 4 (API Limits) states 'Requests exceeding this limit will time out,' reflecting a 'Happy Path Bias' where error state management for high traffic is ignored."
+        }
+      ],
+      "ambiguity_score": 75
+    },
+    "legal_audit": {
+      "leverage_score": 12,
+      "favor_direction": "Vendor",
+      "trap_clauses": [
+        {
+          "clause_snippet": "SQLite file stored locally on the server disk. (tech_spec.pdf)",
+          "risk_explanation": "This is a catastrophic failure point. SQLite is not designed for concurrent production environments, and 'local storage' on a single instance means a single disk failure or instance termination results in total, unrecoverable data loss.",
+          "severity": "Critical",
+          "redline_suggestion": {
+            "original_text": "Database: SQLite file stored locally on the server disk.",
+            "proposed_text": "Database: Managed relational database service (e.g., AWS RDS) with automated daily backups, point-in-time recovery enabled, and data persistence independent of the application server instance.",
+            "negotiation_argument": "Local SQLite storage is professional negligence disguised as a 'budget' choice. If the instance terminates, the business dies. We require a persistent, managed data layer."
+          }
+        },
+        {
+          "clause_snippet": "Redundancy: None. If the server crashes, the site goes down. (tech_spec.pdf)",
+          "risk_explanation": "The vendor is explicitly disclaiming any uptime commitment. This allows them to deliver a broken product and blame the 'architecture' you agreed to. It effectively waives your right to sue for downtime.",
+          "severity": "Critical",
+          "redline_suggestion": {
+            "original_text": "Redundancy: None. If the server crashes, the site goes down.",
+            "proposed_text": "Architecture: The system shall be deployed in a High Availability (HA) configuration across at least two Availability Zones. The Vendor shall guarantee 99.9% uptime for the MVP phase.",
+            "negotiation_argument": "Single-point-of-failure architecture is unacceptable for a commercial product. We are paying for a solution, not a liability."
+          }
+        },
+        {
+          "clause_snippet": "The server can handle approximately 10 concurrent users. (tech_spec.pdf)",
+          "risk_explanation": "This is a 'Success Trap.' If the product is actually successful and gains 11 users, the system fails. The vendor has capped your growth at a level lower than a basic group chat.",
+          "severity": "High",
+          "redline_suggestion": {
+            "original_text": "The server can handle approximately 10 concurrent users. Requests exceeding this limit will time out.",
+            "proposed_text": "The architecture shall utilize an Elastic Load Balancer and Auto-Scaling Group capable of supporting a minimum of 500 concurrent users, with automated scaling triggers based on CPU/RAM utilization.",
+            "negotiation_argument": "A limit of 10 users renders the MVP useless for any meaningful market validation. The infrastructure must scale to meet basic commercial demand."
+          }
+        },
+        {
+          "clause_snippet": "User passwords are stored in the local database. (tech_spec.pdf)",
+          "risk_explanation": "Vague security language is a death warrant. 'Stored' does not mean 'encrypted' or 'hashed.' Storing raw passwords in an unencrypted SQLite file is a legal and compliance nightmare (GDPR/CCPA).",
+          "severity": "Critical",
+          "redline_suggestion": {
+            "original_text": "User passwords are stored in the local database.",
+            "proposed_text": "User credentials shall be managed via a secure, industry-standard identity provider or hashed using Argon2 or bcrypt with a unique salt per user. No raw credentials shall ever be stored in the database.",
+            "negotiation_argument": "The current spec is an invitation for a data breach. We require standard cryptographic safeguards to prevent existential legal liability."
+          }
+        }
+      ],
+      "negotiation_tips": [
+        "The Vendor is using the 'MVP' label to deliver a 'Minimum Viable Disaster.' Reject any 'low-cost' argument that compromises data integrity.",
+        "Demand a Service Level Agreement (SLA). As currently written, the vendor can deliver a system that is offline 50% of the time and still be 'in spec.'",
+        "Threaten to bring in a third-party security auditor; the current mention of local password storage in a flat file suggests the vendor is significantly under-qualified.",
+        "Refuse to sign off on the t2.micro architecture. It is 'burstable' performance, meaning the app will crawl to a halt precisely when you need it most."
+      ]
+    },
+    "executive_synthesis": {
+      "CONTRADICTIONS": [
+        {
+          "issue": "Commercial Viability vs. Technical Constraint",
+          "description": "The Business Proposal implies a launchable 'LegacyApp' project, but the Tech Spec caps users at 10. This creates a legal contradiction where the 'System Overview' promises a project deliverable that is mathematically incapable of supporting a standard business pilot."
+        },
+        {
+          "issue": "Security Expectation vs. Implementation Reality",
+          "description": "The Tech Spec mentions 'Authentication' (implying security), but the implementation details (Direct IP, No SSL, Local SQLite, No Hashing) describe an insecure data transport and storage mechanism that violates basic GDPR/CCPA 'Security by Design' requirements."
+        },
+        {
+          "issue": "Persistence Paradox",
+          "description": "The Tech Spec describes a 'Database' but defines it as a local SQLite file on a non-redundant t2.micro instance. Legally and technically, a database without a backup or persistence layer is 'cache,' not a 'record-keeping system'."
+        }
+      ],
+      "STRATEGIC_SYNTHESIS": "The current deal is categorized as 'High Risk/Zero Scalability.' The Tech Auditor identified a 'Happy Path Bias' where the system is built to fail under any stress. The Legal Negotiator identified these gaps as 'Professional Negligence.' Synthetically: This is not an MVP; it is a prototype being sold as production software. By signing, we accept total liability for data loss and security breaches. We must leverage the 'Success Trap' and 'Security Liability' arguments to force the vendor to move to managed services (RDS) and encrypted transport (SSL) before any funds are released.",
+      "REALITY_DIAGRAM_MERMAID": "graph TD\n    User((User/Attacker))\n    subgraph Public_Internet\n        HTTP[Unencrypted HTTP / Direct IP]\n    end\n    subgraph AWS_Single_Instance_T2_Micro\n        App[LegacyApp Service]\n        DB[(Local SQLite File)]\n        Disk[Local Disk - No Redundancy]\n    end\n\n    User -->|Plaintext Password| HTTP\n    HTTP --> App\n    App -->|Read/Write| DB\n    DB -.->|Single Point of Failure| Disk\n\n    style User fill:#f96,stroke:#333\n    style HTTP fill:#f66,stroke:#333,stroke-dasharray: 5 5\n    style Disk fill:#f66,stroke:#333,stroke-width:4px\n    style DB fill:#fff,stroke:#333",
+      "PATCH_PACK": {
+        "jira_tickets": [
+          {
+            "summary": "SEC-001: Implement Password Hashing (Argon2/BCrypt)",
+            "priority": "Highest",
+            "description": "Replace current local storage of passwords with Argon2id hashing. Tech Spec Section 3 currently lacks hashing standards, creating a critical legal liability."
+          },
+          {
+            "summary": "INFRA-001: Migrate SQLite to Managed RDS (PostgreSQL/MySQL)",
+            "priority": "Highest",
+            "description": "Move data layer from local SQLite to AWS RDS to ensure persistence, automated backups, and multi-AZ redundancy."
+          },
+          {
+            "summary": "SEC-002: SSL/TLS Termination and Domain Mapping",
+            "priority": "High",
+            "description": "Eliminate 'Direct IP' connection. Implement SSL certificate via AWS Certificate Manager or Let's Encrypt to protect user credentials in transit."
+          },
+          {
+            "summary": "PERF-001: Implement Reverse Proxy and Load Balancing",
+            "priority": "Medium",
+            "description": "Introduce Nginx/ALB to handle request queuing and prevent hard timeouts at the 10-user threshold."
+          }
+        ],
+        "negotiation_email": "Subject: Urgent: Technical Architecture Concerns and Required Amendments - LegacyApp MVP\n\nDear Vendor Team,\n\nWe have completed our internal audit of the Technical Specification for the LegacyApp project. While we appreciate the focus on cost-efficiency, our Technical and Legal teams have identified several 'Critical' risks that prevent us from moving forward with the current architecture.\n\nSpecifically, we require the following amendments to be reflected in a revised proposal:\n\n1. Data Integrity: The reliance on a local SQLite file without a disaster recovery plan is unacceptable. We require a managed database solution (e.g., AWS RDS) with automated daily backups.\n\n2. Security Standards: Storing credentials in a local file via unencrypted HTTP (Direct IP) exposes both parties to significant legal liability under data protection regulations. We require the implementation of SSL/TLS and industry-standard password hashing (Argon2 or BCrypt).\n\n3. Scalability & Uptime: The current 10-user limit and lack of redundancy create a 'Single Point of Failure' that does not meet the definition of a commercially viable product. We need a commitment to a 99.9% uptime SLA and a path to scaling beyond 10 concurrent users via an Application Load Balancer.\n\nWe view these not as 'extra features,' but as the baseline requirements for a professional software delivery. Please let us know when you can provide a revised spec and updated pricing for these critical safety components.\n\nBest regards,\n\nSpecGap\nChief Technology & Legal Officer"
+      }
+    }
+  }
+}
