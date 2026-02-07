@@ -1,4 +1,5 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Query
+from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Dict, Any
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -13,10 +14,31 @@ from app.services.tech_engine import analyze_tech_gaps
 from app.services.biz_engine import analyze_proposal_leverage
 from app.services.cross_check import run_cross_check
 
+import logging
+import sys
+
+# Configure logging
+logging.basicConfig(
+    stream=sys.stdout,
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger("api")
+
 app = FastAPI(title=settings.PROJECT_NAME)
+
+# CORS middleware - allow frontend to make requests
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:8080", "http://127.0.0.1:8080", "http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.on_event("startup")
 async def startup_event():
+    logger.info("Starting up SpecGap Backend Service")
     init_db()
 
 @app.get("/")
