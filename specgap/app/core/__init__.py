@@ -2,7 +2,7 @@
 SpecGap Core Module
 """
 
-from .config import settings, model_text, model_vision, get_settings
+from .config import settings, model_text, model_vision, round_models, create_model_for_round, get_settings
 from .database import init_db, get_db, get_db_session, AuditRepository, CommentRepository
 from .logging import setup_logging, get_logger
 from .exceptions import (
@@ -28,6 +28,8 @@ __all__ = [
     "settings",
     "model_text",
     "model_vision",
+    "round_models",
+    "create_model_for_round",
     "get_settings",
 
     # Database

@@ -3,11 +3,15 @@
 Council Workflow - 3-Loop Recursive Consensus System
 Uses LangGraph for orchestrating multi-agent deliberation.
 
-Rate Limit Strategy:
-- Gemini 3 Flash Free Tier: 5 RPM (requests per minute)
+Rate Limit Strategy (Multi-API Key):
+- Gemini Free Tier: 5 RPM per project/API key
 - We have 9 total calls (3 agents × 3 rounds)
-- Running sequentially with 12+ second delays between calls
-- Total time: ~2 minutes for full council session
+- Solution: Use 3 different API keys (one per round)
+- Each round makes 3 PARALLEL calls, staying under 5 RPM per key
+- Result: Full council session in ~30-40 seconds!
+
+IMPORTANT: genai.configure() is GLOBAL, so we must configure the API key
+immediately before each API call, not at model creation time.
 """
 
 from typing import TypedDict, Dict, Any, Optional, List
@@ -16,15 +20,13 @@ import json
 import time
 from langgraph.graph import StateGraph, END
 
-from app.core.config import model_text, settings
+from app.core.config import create_model_for_round, settings
 from app.core.prompts import COUNCIL_PERSONAS, PROMPT_TEMPLATES
 from app.core.logging import get_logger
 from app.core.exceptions import AIModelError, AIResponseParseError, CouncilError
 
 logger = get_logger("workflow")
 
-# Rate limiting: 5 RPM = 12 seconds between requests (with buffer)
-RATE_LIMIT_DELAY = 13.0  # seconds between API calls to stay under 5 RPM
 
 
 # --- STATE MANAGEMENT ---
@@ -48,19 +50,22 @@ class CouncilState(TypedDict):
 async def run_agent_round(
     agent_name: str, 
     context: str, 
-    round_type: str, 
-    prev_draft: str = "", 
+    round_type: str,
+    model,  # Pre-configured model passed from round node
+    prev_draft: str = "",
     peer_drafts: str = "",
     domain: str = "Software Engineering",
     max_retries: int = 3
 ) -> str:
     """
     Execute a single agent's analysis round with retry logic.
+    Model is pre-configured with the correct API key by the calling round node.
 
     Args:
         agent_name: Name of the agent (legal, business, finance)
         context: Combined document text
         round_type: ROUND_1, ROUND_2, or ROUND_3
+        model: Pre-configured Gemini model with round-specific API key
         prev_draft: Agent's previous draft (for rounds 2-3)
         peer_drafts: Other agents' drafts (for rounds 2-3)
         domain: Business domain context
@@ -98,13 +103,13 @@ async def run_agent_round(
     last_error = None
     for attempt in range(max_retries):
         try:
-            # Small delay only on retries (main rate limiting is done at round level)
+            # Small delay only on retries
             if attempt > 0:
-                retry_delay = RATE_LIMIT_DELAY * (attempt + 1)
+                retry_delay = 15 * (attempt + 1)  # 30s, 45s for retries
                 logger.info(f"[{agent_name}] Retry {attempt + 1}, waiting {retry_delay}s")
                 await asyncio.sleep(retry_delay)
 
-            response = await model_text.generate_content_async(full_prompt)
+            response = await model.generate_content_async(full_prompt)
 
             if not response or not response.text:
                 raise AIModelError(
@@ -127,8 +132,7 @@ async def run_agent_round(
 
             # For rate limit errors, wait longer before retry
             if "quota" in str(e).lower() or "rate" in str(e).lower():
-                # Extract retry delay from error if available, otherwise use default
-                wait_time = 45  # Default wait for rate limits
+                wait_time = 60  # Wait full minute for rate limits
                 logger.info(f"[{agent_name}] Rate limited, waiting {wait_time}s before retry")
                 await asyncio.sleep(wait_time)
 
@@ -140,31 +144,31 @@ async def run_agent_round(
 
 async def node_round_1_blind(state: CouncilState) -> dict:
     """Round 1: Independent Analysis - Each agent analyzes without seeing others"""
-    logger.info("--- Council Round 1: Blind Draft ---")
+    logger.info("--- Council Round 1: Blind Draft (using API Key 1) ---")
 
     domain = state.get("domain", "Software Engineering")
-    agents = ["legal", "business", "finance"]
+
+    # Create model with Round 1's API key BEFORE parallel execution
+    model = create_model_for_round("ROUND_1")
+
+    # Run all agents in PARALLEL - safe because we configured the API key above
+    tasks = [
+        run_agent_round(agent, state["combined_context"], "ROUND_1", model, domain=domain)
+        for agent in ["legal", "business", "finance"]
+    ]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
 
     drafts = {}
     errors = {}
 
-    # Run agents SEQUENTIALLY to respect 5 RPM rate limit
-    for i, agent in enumerate(agents):
-        # Add delay between calls (not before first call)
-        if i > 0:
-            logger.info(f"[Rate Limit] Waiting {RATE_LIMIT_DELAY}s before next agent...")
-            await asyncio.sleep(RATE_LIMIT_DELAY)
-
-        try:
-            result = await run_agent_round(
-                agent, state["combined_context"], "ROUND_1", domain=domain
-            )
+    for agent, result in zip(["legal", "business", "finance"], results):
+        if isinstance(result, Exception):
+            logger.error(f"[Round 1] {agent} failed: {result}")
+            drafts[agent] = f"Error: {str(result)}"
+            errors[agent] = str(result)
+        else:
             drafts[agent] = result
             logger.info(f"[Round 1] {agent} completed: {len(result)} chars")
-        except Exception as e:
-            logger.error(f"[Round 1] {agent} failed: {e}")
-            drafts[agent] = f"Error: {str(e)}"
-            errors[agent] = str(e)
 
     return {
         "round_1_drafts": drafts,
@@ -173,11 +177,10 @@ async def node_round_1_blind(state: CouncilState) -> dict:
 
 async def node_round_2_crosscheck(state: CouncilState) -> dict:
     """Round 2: Cross-Check - Each agent reviews peers' drafts and refines"""
-    logger.info("--- Council Round 2: Cross-Check ---")
+    logger.info("--- Council Round 2: Cross-Check (using API Key 2) ---")
 
     drafts = state["round_1_drafts"]
     domain = state.get("domain", "Software Engineering")
-    agents = ["legal", "business", "finance"]
 
     # Build peer context for each agent
     peer_contexts = {
@@ -186,29 +189,32 @@ async def node_round_2_crosscheck(state: CouncilState) -> dict:
         "finance": f"Legal Analysis:\n{drafts['legal']}\n\nBusiness Analysis:\n{drafts['business']}"
     }
 
+    # Create model with Round 2's API key BEFORE parallel execution
+    model = create_model_for_round("ROUND_2")
+
+    # Run all agents in PARALLEL - safe because we configured the API key above
+    tasks = [
+        run_agent_round(
+            agent,
+            state["combined_context"],
+            "ROUND_2",
+            model,
+            prev_draft=drafts[agent],
+            peer_drafts=peer_contexts[agent],
+            domain=domain
+        )
+        for agent in ["legal", "business", "finance"]
+    ]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
     updated_drafts = {}
-
-    # Run agents SEQUENTIALLY to respect 5 RPM rate limit
-    for i, agent in enumerate(agents):
-        # Add delay between calls (not before first call)
-        if i > 0:
-            logger.info(f"[Rate Limit] Waiting {RATE_LIMIT_DELAY}s before next agent...")
-            await asyncio.sleep(RATE_LIMIT_DELAY)
-
-        try:
-            result = await run_agent_round(
-                agent,
-                state["combined_context"],
-                "ROUND_2",
-                prev_draft=drafts[agent],
-                peer_drafts=peer_contexts[agent],
-                domain=domain
-            )
+    for agent, result in zip(["legal", "business", "finance"], results):
+        if isinstance(result, Exception):
+            logger.error(f"[Round 2] {agent} failed: {result}")
+            updated_drafts[agent] = drafts[agent]  # Keep Round 1 draft
+        else:
             updated_drafts[agent] = result
             logger.info(f"[Round 2] {agent} refined: {len(result)} chars")
-        except Exception as e:
-            logger.error(f"[Round 2] {agent} failed: {e}")
-            updated_drafts[agent] = drafts[agent]  # Keep Round 1 draft
 
     return {"round_2_drafts": updated_drafts}
 
@@ -261,11 +267,10 @@ def _parse_flashcard_json(raw_result: str, agent: str) -> dict:
 
 async def node_round_3_verdict(state: CouncilState) -> dict:
     """Round 3: Final Verdict - Generate actionable flashcards"""
-    logger.info("--- Council Round 3: Final Verdict ---")
+    logger.info("--- Council Round 3: Final Verdict (using API Key 3) ---")
 
     drafts = state["round_2_drafts"]
     domain = state.get("domain", "Software Engineering")
-    agents = ["legal", "business", "finance"]
 
     # Build peer context for each agent
     peer_contexts = {
@@ -274,30 +279,34 @@ async def node_round_3_verdict(state: CouncilState) -> dict:
         "finance": f"Legal Analysis:\n{drafts['legal']}\n\nBusiness Analysis:\n{drafts['business']}"
     }
 
+    # Create model with Round 3's API key BEFORE parallel execution
+    model = create_model_for_round("ROUND_3")
+
+    # Run all agents in PARALLEL - safe because we configured the API key above
+    tasks = [
+        run_agent_round(
+            agent,
+            state["combined_context"],
+            "ROUND_3",
+            model,
+            prev_draft=drafts[agent],
+            peer_drafts=peer_contexts[agent],
+            domain=domain
+        )
+        for agent in ["legal", "business", "finance"]
+    ]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
     final_output = {}
-
-    # Run agents SEQUENTIALLY to respect 5 RPM rate limit
-    for i, agent in enumerate(agents):
-        # Add delay between calls (not before first call)
-        if i > 0:
-            logger.info(f"[Rate Limit] Waiting {RATE_LIMIT_DELAY}s before next agent...")
-            await asyncio.sleep(RATE_LIMIT_DELAY)
-
-        try:
-            result = await run_agent_round(
-                agent,
-                state["combined_context"],
-                "ROUND_3",
-                prev_draft=drafts[agent],
-                peer_drafts=peer_contexts[agent],
-                domain=domain
-            )
+    for agent, result in zip(["legal", "business", "finance"], results):
+        if isinstance(result, Exception):
+            logger.error(f"[Round 3] {agent} failed: {result}")
+            final_output[agent] = {"flashcards": [], "error": str(result)}
+        else:
             final_output[agent] = _parse_flashcard_json(result, agent)
-        except Exception as e:
-            logger.error(f"[Round 3] {agent} failed: {e}")
-            final_output[agent] = {"flashcards": [], "error": str(e)}
 
     return {"round_3_final": final_output}
+
 
 async def node_generate_patch_pack(state: CouncilState) -> dict:
     """Aggregator: Consolidates flashcards from all agents into deliverables"""
