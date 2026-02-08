@@ -7,10 +7,12 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from fastapi import FastAPI, UploadFile, File, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from typing import List, Dict, Any
+import json
 
 from app.core.config import settings
-from app.core.database import init_db, get_db, AuditRepository
+from app.core.database import init_db, get_db, get_db_session, AuditRepository
 from app.core.logging import setup_logging, get_logger
 from app.core.middleware import (
     RequestTrackingMiddleware,
@@ -144,9 +146,25 @@ async def run_council_session(
     }
     
     try:
+        logger.info("Invoking Council Workflow...")
         result = await council_app.ainvoke(initial_state)
         
-        logger.info(f"Council session completed: {len(result.get('patch_pack', {}).get('flashcards', []))} flashcards")
+        # Save to database
+        flashcard_count = len(result.get("patch_pack", {}).get("flashcards", []))
+        logger.info(f"Council Session Complete. Flashcards generated: {flashcard_count}")
+
+        try:
+            with get_db_session() as db:
+                AuditRepository.create_audit(
+                    db,
+                    audit_type="council_session",
+                    patch_pack=result.get("patch_pack"),
+                    tech_spec_filename=",".join(file_names),
+                    project_name=file_names[0] if file_names else "Untitled"
+                )
+                logger.info("Audit saved to database")
+        except Exception as db_error:
+            logger.warning(f"Failed to save audit to DB: {db_error}")
 
         return {
             "status": "success",
@@ -165,6 +183,82 @@ async def run_council_session(
                 "details": str(e)
             }
         )
+
+
+# ============== STREAMING COUNCIL SESSION (SSE) ==============
+
+@app.post("/api/v1/audit/council-session/stream", tags=["Audit"])
+async def stream_council_session(
+    files: List[UploadFile] = File(..., description="Documents to analyze"),
+    domain: str = Query("Software Engineering", description="Domain context")
+):
+    """
+    Stream the Council Session progress via Server-Sent Events (SSE).
+
+    Events sent:
+    - `stage`: Current processing stage (council, round1, round2, round3, synthesis)
+    - `complete`: Final result with all flashcards
+    - `error`: Error message if something fails
+    """
+    # Pre-process files (non-streaming part)
+    combined_text = ""
+    file_names = []
+
+    try:
+        for f in files:
+            await f.seek(0)
+            text, _ = await extract_text_from_file(f)
+            combined_text += f"\n=== SOURCE DOCUMENT: {f.filename} ===\n{text}"
+            file_names.append(f.filename)
+    except Exception as e:
+        logger.error(f"File processing failed: {e}")
+        raise HTTPException(status_code=400, detail=f"Failed to read files: {str(e)}")
+
+    logger.info(f"Stream session started for: {file_names}")
+
+    initial_state = {
+        "combined_context": combined_text,
+        "domain": domain,
+        "round_1_drafts": {},
+        "round_2_drafts": {},
+        "round_3_final": {},
+        "patch_pack": {},
+        "errors": {}
+    }
+
+    async def event_generator():
+        try:
+            # Yield initial event
+            yield f"data: {json.dumps({'type': 'stage', 'stage': 'council'})}\n\n"
+
+            # Start workflow stream
+            # stream_mode="updates" yields the output of each node as it completes
+            async for chunk in council_app.astream(initial_state, stream_mode="updates"):
+                for node_name, node_output in chunk.items():
+                    logger.info(f"Node completed: {node_name}")
+
+                    if node_name == "round_1":
+                        yield f"data: {json.dumps({'type': 'stage', 'stage': 'round1'})}\n\n"
+                    elif node_name == "round_2":
+                        yield f"data: {json.dumps({'type': 'stage', 'stage': 'round2'})}\n\n"
+                    elif node_name == "round_3":
+                        yield f"data: {json.dumps({'type': 'stage', 'stage': 'round3'})}\n\n"
+                    elif node_name == "pack_generator":
+                        yield f"data: {json.dumps({'type': 'stage', 'stage': 'synthesis'})}\n\n"
+                        # Also yield the final result
+                        final_payload = {
+                            "status": "success",
+                            "files_analyzed": file_names,
+                            "domain": domain,
+                            "council_verdict": node_output.get("patch_pack", {})
+                        }
+                        yield f"data: {json.dumps({'type': 'complete', 'result': final_payload})}\n\n"
+
+        except Exception as e:
+            logger.error(f"Stream error: {e}", exc_info=True)
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 # Legacy endpoint (deprecated, use /api/v1/audit/council-session)
@@ -378,6 +472,111 @@ async def run_full_spectrum_analysis(
         )
 
 
+# ============== STREAMING FULL SPECTRUM (SSE) ==============
+
+@app.post("/api/v1/audit/full-spectrum/stream", tags=["Audit"])
+async def stream_full_spectrum(
+    files: List[UploadFile] = File(..., description="Documents to analyze"),
+    domain: str = Query("Software Engineering", description="Domain context")
+):
+    """
+    Stream the Full Spectrum analysis (Council + Deep) via Server-Sent Events (SSE).
+
+    Events sent:
+    - `stage`: Current processing stage (council, round1, round2, round3, tech_audit, legal_audit, synthesis)
+    - `complete`: Final combined result
+    - `error`: Error message if something fails
+    """
+    # Pre-process files
+    combined_text = ""
+    file_names = []
+
+    try:
+        for f in files:
+            await f.seek(0)
+            text, _ = await extract_text_from_file(f)
+            combined_text += f"\n=== SOURCE DOCUMENT: {f.filename} ===\n{text}"
+            file_names.append(f.filename)
+    except Exception as e:
+        logger.error(f"File processing failed: {e}")
+        raise HTTPException(status_code=400, detail=f"Failed to read files: {str(e)}")
+
+    logger.info(f"Stream full-spectrum started for: {file_names}")
+
+    council_state = {
+        "combined_context": combined_text,
+        "domain": domain,
+        "round_1_drafts": {},
+        "round_2_drafts": {},
+        "round_3_final": {},
+        "patch_pack": {},
+        "errors": {}
+    }
+
+    async def event_generator():
+        try:
+            # --- PART 1: COUNCIL SESSION ---
+            yield f"data: {json.dumps({'type': 'stage', 'stage': 'council'})}\n\n"
+
+            council_result = None
+
+            # Stream Council Steps
+            async for chunk in council_app.astream(council_state, stream_mode="updates"):
+                for node_name, node_output in chunk.items():
+                    if node_name == "round_1":
+                        yield f"data: {json.dumps({'type': 'stage', 'stage': 'round1'})}\n\n"
+                    elif node_name == "round_2":
+                        yield f"data: {json.dumps({'type': 'stage', 'stage': 'round2'})}\n\n"
+                    elif node_name == "round_3":
+                        yield f"data: {json.dumps({'type': 'stage', 'stage': 'round3'})}\n\n"
+                    elif node_name == "pack_generator":
+                        # Council is done
+                        council_result = node_output.get("patch_pack", {})
+
+            # --- PART 2: DEEP ANALYSIS ---
+
+            # Tech Audit
+            yield f"data: {json.dumps({'type': 'stage', 'stage': 'tech_audit'})}\n\n"
+            logger.info("[Stream] Starting Tech Audit...")
+            tech_report = await analyze_tech_gaps(combined_text)
+
+            # Legal Audit
+            yield f"data: {json.dumps({'type': 'stage', 'stage': 'legal_audit'})}\n\n"
+            logger.info("[Stream] Starting Legal Audit...")
+            legal_report = await analyze_proposal_leverage(combined_text)
+
+            # Synthesis
+            yield f"data: {json.dumps({'type': 'stage', 'stage': 'synthesis'})}\n\n"
+            logger.info("[Stream] Starting Synthesis...")
+            synthesis = await run_cross_check(
+                tech_text=combined_text,
+                proposal_text=combined_text,
+                tech_report=tech_report,
+                legal_report=legal_report
+            )
+
+            # --- FINAL COMPLETE ---
+            final_payload = {
+                "status": "success",
+                "mode": "full_spectrum",
+                "files_analyzed": file_names,
+                "domain": domain,
+                "council_verdict": council_result,
+                "deep_analysis": {
+                    "tech_audit": tech_report,
+                    "legal_audit": legal_report,
+                    "executive_synthesis": synthesis
+                }
+            }
+            yield f"data: {json.dumps({'type': 'complete', 'result': final_payload})}\n\n"
+
+        except Exception as e:
+            logger.error(f"Stream error: {e}", exc_info=True)
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
 @app.post("/audit/full-spectrum", tags=["Audit (Legacy)"], deprecated=True)
 async def run_full_spectrum_legacy(
     files: List[UploadFile] = File(...),
@@ -388,8 +587,6 @@ async def run_full_spectrum_legacy(
 
 
 # ============== DOCUMENT UTILITIES ==============
-
-
 
 @app.post("/api/v1/documents/extract", tags=["Documents"])
 async def extract_document_text(
@@ -429,8 +626,6 @@ async def list_audits(
     """
     List saved audit records with optional filtering.
     """
-    from app.core.database import get_db_session
-
     with get_db_session() as db:
         audits = AuditRepository.get_audits(
             db,
@@ -445,7 +640,7 @@ async def list_audits(
             "audits": [
                 {
                     "id": a.id,
-                    "created_at": a.created_at.isoformat(),
+                    "created_at": a.created_at.isoformat() if a.created_at else None,
                     "audit_type": a.audit_type,
                     "project_name": a.project_name,
                     "risk_level": a.risk_level,
@@ -459,13 +654,36 @@ async def list_audits(
         }
 
 
+# Legacy audit list endpoint (for frontend compatibility)
+@app.get("/audits", tags=["History (Legacy)"], deprecated=True)
+async def list_audits_legacy(
+    limit: int = Query(20, ge=1, le=100)
+):
+    """Legacy endpoint - use /api/v1/audits instead"""
+    with get_db_session() as db:
+        audits = AuditRepository.get_audits(db, limit=limit)
+        return {
+            "audits": [
+                {
+                    "id": a.id,
+                    "created_at": a.created_at.isoformat() if a.created_at else None,
+                    "project_name": a.project_name,
+                    "audit_type": a.audit_type,
+                    "tech_spec_filename": getattr(a, 'tech_spec_filename', None),
+                    "risk_level": a.risk_level,
+                    "composite_risk_score": a.composite_risk_score,
+                    "status": getattr(a, 'status', 'completed')
+                }
+                for a in audits
+            ]
+        }
+
+
 @app.get("/api/v1/audits/statistics", tags=["History"])
 async def get_audit_statistics():
     """
     Get aggregate statistics for dashboard.
     """
-    from app.core.database import get_db_session
-
     with get_db_session() as db:
         stats = AuditRepository.get_statistics(db)
 
@@ -480,8 +698,6 @@ async def get_audit_detail(audit_id: str):
     """
     Get detailed audit record by ID.
     """
-    from app.core.database import get_db_session
-
     with get_db_session() as db:
         audit = AuditRepository.get_audit_by_id(db, audit_id)
 
@@ -492,7 +708,7 @@ async def get_audit_detail(audit_id: str):
             "status": "success",
             "audit": {
                 "id": audit.id,
-                "created_at": audit.created_at.isoformat(),
+                "created_at": audit.created_at.isoformat() if audit.created_at else None,
                 "audit_type": audit.audit_type,
                 "project_name": audit.project_name,
                 "tech_gaps": audit.tech_gaps,
@@ -504,5 +720,29 @@ async def get_audit_detail(audit_id: str):
                 "composite_risk_score": audit.composite_risk_score,
                 "risk_level": audit.risk_level
             }
+        }
+
+
+# Legacy audit detail endpoint (for frontend compatibility)
+@app.get("/audits/{audit_id}", tags=["History (Legacy)"], deprecated=True)
+async def get_audit_legacy(audit_id: str):
+    """Legacy endpoint - use /api/v1/audits/{audit_id} instead"""
+    with get_db_session() as db:
+        audit = AuditRepository.get_audit_by_id(db, audit_id)
+        if not audit:
+            raise HTTPException(status_code=404, detail="Audit not found")
+        return {
+            "id": audit.id,
+            "created_at": audit.created_at.isoformat() if audit.created_at else None,
+            "project_name": audit.project_name,
+            "audit_type": audit.audit_type,
+            "tech_spec_filename": getattr(audit, 'tech_spec_filename', None),
+            "risk_level": audit.risk_level,
+            "composite_risk_score": audit.composite_risk_score,
+            "status": getattr(audit, 'status', 'completed'),
+            "patch_pack": audit.patch_pack,
+            "tech_gaps": audit.tech_gaps,
+            "proposal_risks": audit.proposal_risks,
+            "contradictions": audit.contradictions
         }
 
