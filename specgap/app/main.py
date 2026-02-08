@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.database import init_db
+from app.core.database import init_db, get_db, get_db_session, AuditRepository, AuditRecord
 from app.services.parser import extract_text_from_file
 # We only import the new Council App. Old engines are removed.
 from app.services.workflow import council_app 
@@ -50,6 +50,64 @@ async def health_check():
     }
 
 
+class PatchPackRequest(BaseModel):
+    selected_cards: List[Dict[str, Any]]
+    domain: str = "Software Engineering"
+
+
+# ============== AUDIT HISTORY ENDPOINTS ==============
+
+@app.get("/audits")
+async def list_audits(
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db)
+):
+    """List all past audits from database."""
+    logger.info(f"Fetching audit history (limit={limit})")
+    audits = AuditRepository.get_audits(db, limit=limit)
+    return {
+        "audits": [
+            {
+                "id": a.id,
+                "created_at": a.created_at.isoformat() if a.created_at else None,
+                "project_name": a.project_name,
+                "audit_type": a.audit_type,
+                "tech_spec_filename": a.tech_spec_filename,
+                "risk_level": a.risk_level,
+                "composite_risk_score": a.composite_risk_score,
+                "status": a.status
+            }
+            for a in audits
+        ]
+    }
+
+
+@app.get("/audits/{audit_id}")
+async def get_audit(
+    audit_id: str,
+    db: Session = Depends(get_db)
+):
+    """Get full details of a specific audit."""
+    logger.info(f"Fetching audit details: {audit_id}")
+    audit = AuditRepository.get_audit_by_id(db, audit_id)
+    if not audit:
+        raise HTTPException(status_code=404, detail="Audit not found")
+    return {
+        "id": audit.id,
+        "created_at": audit.created_at.isoformat() if audit.created_at else None,
+        "project_name": audit.project_name,
+        "audit_type": audit.audit_type,
+        "tech_spec_filename": audit.tech_spec_filename,
+        "risk_level": audit.risk_level,
+        "composite_risk_score": audit.composite_risk_score,
+        "status": audit.status,
+        "patch_pack": audit.patch_pack,
+        "tech_gaps": audit.tech_gaps,
+        "proposal_risks": audit.proposal_risks,
+        "contradictions": audit.contradictions
+    }
+
+
 @app.post("/audit/council-session")
 async def run_council_session(
     files: List[UploadFile] = File(...),
@@ -77,7 +135,25 @@ async def run_council_session(
     }
     
     try:
+        logger.info("Invoking Council Workflow...")
         result = await council_app.ainvoke(initial_state)
+        
+        # Save to database
+        flashcard_count = len(result.get("patch_pack", {}).get("flashcards", []))
+        logger.info(f"Council Session Complete. Flashcards generated: {flashcard_count}")
+        
+        try:
+            with get_db_session() as db:
+                AuditRepository.create_audit(
+                    db,
+                    audit_type="council_session",
+                    patch_pack=result.get("patch_pack"),
+                    tech_spec_filename=",".join(file_names),
+                    project_name=file_names[0] if file_names else "Untitled"
+                )
+                logger.info("Audit saved to database")
+        except Exception as db_error:
+            logger.warning(f"Failed to save audit to DB: {db_error}")
         
         return {
             "status": "success",
@@ -87,18 +163,12 @@ async def run_council_session(
         }
         
     except Exception as e:
-        print(f"Council Runtime Error: {e}")
+        logger.error(f"Council Runtime Error: {e}", exc_info=True)
         return {
             "status": "error",
             "message": "The Council failed to reach a verdict.",
             "details": str(e)
         }
-
-
-
-class PatchPackRequest(BaseModel):
-    selected_cards: List[Dict[str, Any]]
-    domain: str = "Software Engineering"
 
 
 @app.post("/audit/patch-pack")

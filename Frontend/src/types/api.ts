@@ -179,12 +179,19 @@ export interface AuditsListParams {
   max_score?: number;
 }
 
+export interface AuditHistoryItem {
+  id: string;
+  created_at: string | null;
+  project_name: string | null;
+  audit_type: string;
+  tech_spec_filename: string | null;
+  risk_level: string | null;
+  composite_risk_score: number | null;
+  status: string;
+}
+
 export interface AuditsListResponse {
-  items: Audit[];
-  total: number;
-  page: number;
-  limit: number;
-  has_more: boolean;
+  audits: AuditHistoryItem[];
 }
 
 // GET /vector/search
