@@ -21,7 +21,7 @@ from app.schemas import (
     HealthResponse,
     PatchPackRequest,
 )
-from app.services.parser import extract_text_from_file, classify_document, compute_file_hash
+from app.services.parser import extract_text_from_file, compute_file_hash
 from app.services.workflow import council_app
 from app.services.patch_pack import build_patch_pack_files
 from app.services.tech_engine import analyze_tech_gaps
@@ -389,26 +389,6 @@ async def run_full_spectrum_legacy(
 
 # ============== DOCUMENT UTILITIES ==============
 
-@app.post("/api/v1/documents/classify", tags=["Documents"])
-async def classify_uploaded_document(
-    file: UploadFile = File(..., description="Document to classify")
-):
-    """
-    Classify a document to determine recommended analysis agents.
-
-    Useful for understanding what type of document you're uploading
-    before running a full analysis.
-    """
-    await file.seek(0)
-    text, metadata = await extract_text_from_file(file)
-    classification = await classify_document(text, file.filename)
-
-    return {
-        "status": "success",
-        "filename": file.filename,
-        "metadata": metadata,
-        "classification": classification
-    }
 
 
 @app.post("/api/v1/documents/extract", tags=["Documents"])
