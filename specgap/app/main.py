@@ -26,7 +26,8 @@ from app.services.workflow import council_app
 from app.services.patch_pack import build_patch_pack_files
 from app.services.tech_engine import analyze_tech_gaps
 from app.services.biz_engine import analyze_proposal_leverage
-from app.services.cross_check import run_cross_check
+from app.services.cross_check import run_cross_check, run_smart_comparison
+from app.services.chunker import condense_large_document
 
 
 # ============== LOGGING SETUP ==============
@@ -133,6 +134,14 @@ async def run_council_session(
 
     logger.info(f"Council session started for: {file_names}")
 
+    # Condense large documents for council efficiency (Test Case 1: 200-page PDFs)
+    if len(combined_text) > settings.MAX_CONTEXT_CHARS:
+        logger.info(
+            f"Large document detected ({len(combined_text):,} chars), "
+            f"condensing for council (limit: {settings.MAX_CONTEXT_CHARS:,})..."
+        )
+        combined_text = await condense_large_document(combined_text)
+
     initial_state = {
         "combined_context": combined_text,
         "domain": domain,
@@ -238,13 +247,15 @@ async def run_deep_analysis(
     """
     combined_text = ""
     file_names = []
-    
+    file_texts = {}  
+
     for f in files:
         await f.seek(0)
         text, _ = await extract_text_from_file(f)
         combined_text += f"\n=== SOURCE DOCUMENT: {f.filename} ===\n{text}"
         file_names.append(f.filename)
-    
+        file_texts[f.filename] = text
+
     logger.info(f"Deep analysis started for: {file_names}")
 
     try:
@@ -255,14 +266,20 @@ async def run_deep_analysis(
         # Run Biz Engine
         logger.info("[Deep Audit] Running Legal Leverage Analysis...")
         legal_report = await analyze_proposal_leverage(combined_text)
-        
-        # Run Cross-Check
+
+        tech_valid = not tech_report.get("error") or bool(tech_report.get("critical_gaps"))
+        legal_valid = not legal_report.get("error") or bool(legal_report.get("trap_clauses"))
+
+        if not tech_valid:
+            logger.warning("Tech engine returned error, cross-check will run without tech context")
+        if not legal_valid:
+            logger.warning("Legal engine returned error, cross-check will run without legal context")
+
         logger.info("[Deep Audit] Running Cross-Check Synthesis...")
-        synthesis = await run_cross_check(
-            tech_text=combined_text,
-            proposal_text=combined_text,
-            tech_report=tech_report,
-            legal_report=legal_report
+        synthesis = await run_smart_comparison(
+            file_texts=file_texts,
+            tech_report=tech_report if tech_valid else None,
+            legal_report=legal_report if legal_valid else None
         )
         
         logger.info("Deep analysis completed successfully")
@@ -298,7 +315,6 @@ async def run_deep_analysis_legacy(
     return await run_deep_analysis(files, domain)
 
 
-# ============== FULL SPECTRUM ENDPOINT ==============
 
 @app.post("/api/v1/audit/full-spectrum", tags=["Audit"])
 async def run_full_spectrum_analysis(
@@ -316,17 +332,27 @@ async def run_full_spectrum_analysis(
     """
     combined_text = ""
     file_names = []
+    file_texts = {} 
 
     for f in files:
         await f.seek(0)
         text, _ = await extract_text_from_file(f)
         combined_text += f"\n=== SOURCE DOCUMENT: {f.filename} ===\n{text}"
         file_names.append(f.filename)
-    
+        file_texts[f.filename] = text
+
     logger.info(f"Full spectrum analysis started for: {file_names}")
 
+    council_text = combined_text
+    if len(combined_text) > settings.MAX_CONTEXT_CHARS:
+        logger.info(
+            f"Large document detected ({len(combined_text):,} chars), "
+            f"condensing for council..."
+        )
+        council_text = await condense_large_document(combined_text)
+
     council_state = {
-        "combined_context": combined_text,
+        "combined_context": council_text,
         "domain": domain,
         "round_1_drafts": {},
         "round_2_drafts": {},
@@ -344,11 +370,14 @@ async def run_full_spectrum_analysis(
         logger.info("[Full Spectrum] Running Deep Analysis...")
         tech_report = await analyze_tech_gaps(combined_text)
         legal_report = await analyze_proposal_leverage(combined_text)
-        synthesis = await run_cross_check(
-            tech_text=combined_text,
-            proposal_text=combined_text,
-            tech_report=tech_report,
-            legal_report=legal_report
+
+        tech_valid = not tech_report.get("error") or bool(tech_report.get("critical_gaps"))
+        legal_valid = not legal_report.get("error") or bool(legal_report.get("trap_clauses"))
+
+        synthesis = await run_smart_comparison(
+            file_texts=file_texts,
+            tech_report=tech_report if tech_valid else None,
+            legal_report=legal_report if legal_valid else None
         )
         
         logger.info("Full spectrum analysis completed successfully")
@@ -393,12 +422,7 @@ async def run_full_spectrum_legacy(
 async def classify_uploaded_document(
     file: UploadFile = File(..., description="Document to classify")
 ):
-    """
-    Classify a document to determine recommended analysis agents.
-
-    Useful for understanding what type of document you're uploading
-    before running a full analysis.
-    """
+   
     await file.seek(0)
     text, metadata = await extract_text_from_file(file)
     classification = await classify_document(text, file.filename)
@@ -415,11 +439,7 @@ async def classify_uploaded_document(
 async def extract_document_text(
     file: UploadFile = File(..., description="Document to extract text from")
 ):
-    """
-    Extract text from a document without analysis.
-
-    Useful for previewing what the AI will see.
-    """
+    
     await file.seek(0)
     content = await file.read()
     file_hash = compute_file_hash(content)
@@ -437,7 +457,6 @@ async def extract_document_text(
     }
 
 
-# ============== AUDIT HISTORY ==============
 
 @app.get("/api/v1/audits", tags=["History"])
 async def list_audits(
@@ -446,9 +465,7 @@ async def list_audits(
     audit_type: str = Query(None, description="Filter by audit type"),
     risk_level: str = Query(None, description="Filter by risk level")
 ):
-    """
-    List saved audit records with optional filtering.
-    """
+    
     from app.core.database import get_db_session
 
     with get_db_session() as db:
@@ -481,9 +498,7 @@ async def list_audits(
 
 @app.get("/api/v1/audits/statistics", tags=["History"])
 async def get_audit_statistics():
-    """
-    Get aggregate statistics for dashboard.
-    """
+   
     from app.core.database import get_db_session
 
     with get_db_session() as db:
@@ -497,9 +512,7 @@ async def get_audit_statistics():
 
 @app.get("/api/v1/audits/{audit_id}", tags=["History"])
 async def get_audit_detail(audit_id: str):
-    """
-    Get detailed audit record by ID.
-    """
+   
     from app.core.database import get_db_session
 
     with get_db_session() as db:

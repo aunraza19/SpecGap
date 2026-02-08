@@ -10,6 +10,8 @@ from typing import Dict, Any
 from app.core.config import model_text, settings
 from app.core.logging import get_logger
 from app.core.exceptions import AIModelError, AIResponseParseError
+from app.services.safe_parse import safe_parse_llm_response
+from app.services.sanitizer import wrap_as_document_context
 
 logger = get_logger("biz_engine")
 
@@ -98,7 +100,7 @@ async def analyze_proposal_leverage(
         logger.warning(f"Truncating input from {len(proposal_text):,} to {max_chars:,} chars")
         proposal_text = proposal_text[:max_chars] + "\n\n[...content truncated...]"
 
-    full_prompt = f"{LEGAL_SYSTEM_PROMPT}\n\n--- BUSINESS PROPOSAL TEXT ---\n{proposal_text}"
+    full_prompt = f"{LEGAL_SYSTEM_PROMPT}\n\n{wrap_as_document_context(proposal_text, label='BUSINESS PROPOSAL')}"
 
     last_error = None
     for attempt in range(max_retries):
@@ -115,8 +117,15 @@ async def analyze_proposal_leverage(
                     details="Empty response"
                 )
 
-            cleaned = _clean_json_response(response.text)
-            result = json.loads(cleaned)
+            result = safe_parse_llm_response(
+                response.text,
+                expected_keys=["leverage_score", "trap_clauses"]
+            )
+
+            if result.get("parse_error"):
+                last_error = AIResponseParseError(agent="biz_engine", raw_response=response.text)
+                logger.warning(f"JSON parse error on attempt {attempt + 1}: {result.get('error_message')}")
+                continue  # Retry with next attempt
 
             # Validate and set defaults
             if "leverage_score" not in result:
@@ -135,10 +144,6 @@ async def analyze_proposal_leverage(
             )
 
             return result
-
-        except json.JSONDecodeError as e:
-            last_error = AIResponseParseError(agent="biz_engine", raw_response=response.text if response else None)
-            logger.warning(f"JSON parse error on attempt {attempt + 1}: {e}")
 
         except Exception as e:
             last_error = e

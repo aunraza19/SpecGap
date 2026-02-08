@@ -20,6 +20,8 @@ try:
 except ImportError:
     OCR_AVAILABLE = False
 
+from app.services.sanitizer import sanitize_document_text
+
 
 def compute_file_hash(file_bytes: bytes) -> str:
     
@@ -208,7 +210,11 @@ async def extract_text_from_file(file: UploadFile) -> Tuple[str, Dict]:
         # Fallback for now or error
         text = f"Error: Unsupported file format {filename}. Only PDF, DOCX, TXT, MD supported."
         metadata["format"] = "unknown"
-        
+
+    # Sanitize extracted text to prevent prompt injection (Test Case 5)
+    if not text.startswith("Error:"):
+        text = sanitize_document_text(text, max_length=500000)
+
     return text, metadata
 
 def encode_image_for_gemini(image_file: bytes, mime_type: str = "image/png"):

@@ -13,6 +13,7 @@ from app.core.config import model_text, settings
 from app.core.prompts import COUNCIL_PERSONAS, PROMPT_TEMPLATES
 from app.core.logging import get_logger
 from app.core.exceptions import AIModelError, AIResponseParseError, CouncilError
+from app.services.sanitizer import wrap_as_document_context
 
 logger = get_logger("workflow")
 
@@ -77,7 +78,7 @@ async def run_agent_round(
     if len(context) > max_context:
         truncated_context += f"\n\n[...truncated {len(context) - max_context:,} characters...]"
 
-    full_prompt = f"{base_prompt}\n\n=== DOCUMENTS ===\n{truncated_context}"
+    full_prompt = f"{base_prompt}\n\n{wrap_as_document_context(truncated_context, label='DOCUMENTS')}"
 
     # Retry loop with exponential backoff
     last_error = None
