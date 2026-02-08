@@ -308,14 +308,20 @@ export interface FullSpectrumResponse extends CouncilSessionResponse {
       reality_diagram_mermaid?: string;
       patch_pack?: {
         jira_tickets: Array<{
-          title: string;
+          summary?: string;
+          title?: string;
           description: string;
           priority: string;
-          labels: string[];
-          acceptance_criteria: string;
+          labels?: string[];
+          acceptance_criteria?: string;
         }>;
         negotiation_email: string;
       };
+      // UPPERCASE variants from raw LLM output
+      CONTRADICTIONS?: Array<any>;
+      STRATEGIC_SYNTHESIS?: string;
+      REALITY_DIAGRAM_MERMAID?: string;
+      PATCH_PACK?: any;
     };
   };
 }

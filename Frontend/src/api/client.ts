@@ -190,7 +190,61 @@ export const auditApi = {
     }
   },
 
-  // POST /audit/full-spectrum - Deep analysis with full reports
+  // POST /audit/deep-analysis - Deep analysis WITHOUT redundant flashcards
+  deepAnalysis: async (
+    files: File[],
+    domain: string = 'Software Engineering',
+    onEvent: (event: any) => void
+  ): Promise<void> => {
+    const formData = new FormData();
+    files.forEach((file) => formData.append('files', file));
+
+    const url = `${API_BASE_URL}/audit/deep-analysis?domain=${encodeURIComponent(domain)}`;
+    console.log(`[API] Deep Analysis Request: ${url}`);
+
+    // Simulate stage progression for the UI
+    onEvent({ type: 'stage', stage: 'tech_audit' });
+
+    const response = await fetch(url, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: 'Deep analysis failed' }));
+      onEvent({ type: 'error', message: error.message || 'Deep analysis failed' });
+      throw new Error(error.message || 'Deep analysis failed');
+    }
+
+    onEvent({ type: 'stage', stage: 'legal_audit' });
+    const result = await response.json();
+    onEvent({ type: 'stage', stage: 'synthesis' });
+
+    // Normalize UPPERCASE keys from LLM responses to lowercase
+    const rawSynthesis = result.executive_synthesis || {};
+    const normalizedSynthesis = {
+      contradictions: rawSynthesis.CONTRADICTIONS || rawSynthesis.contradictions || [],
+      strategic_synthesis: rawSynthesis.STRATEGIC_SYNTHESIS || rawSynthesis.strategic_synthesis || '',
+      reality_diagram_mermaid: rawSynthesis.REALITY_DIAGRAM_MERMAID || rawSynthesis.reality_diagram_mermaid || '',
+      patch_pack: rawSynthesis.PATCH_PACK || rawSynthesis.patch_pack || null,
+    };
+
+    // Wrap deep-analysis response so the frontend can handle it
+    // Deep analysis has no council_verdict, so we set it to null
+    const wrappedResult = {
+      ...result,
+      council_verdict: result.council_verdict || null,
+      deep_analysis: {
+        tech_audit: result.tech_audit,
+        legal_audit: result.legal_audit,
+        executive_synthesis: normalizedSynthesis,
+      }
+    };
+
+    onEvent({ type: 'complete', result: wrappedResult });
+  },
+
+  // POST /audit/full-spectrum - Full spectrum with council + deep
   fullSpectrum: async (files: File[], domain: string = 'Software Engineering'): Promise<FullSpectrumResponse> => {
     const formData = new FormData();
     files.forEach((file) => formData.append('files', file));
