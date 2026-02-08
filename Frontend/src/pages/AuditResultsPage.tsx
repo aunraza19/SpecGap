@@ -200,7 +200,7 @@ export default function AuditResultsPage() {
           className="space-y-6"
         >
           {/* Executive Synthesis */}
-          {fullResponse?.deep_analysis?.executive_synthesis && (
+          {fullResponse?.deep_analysis?.executive_synthesis?.strategic_synthesis && (
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -210,19 +210,19 @@ export default function AuditResultsPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <p className="text-sm text-muted-foreground leading-relaxed">
-                  {fullResponse.deep_analysis.executive_synthesis.STRATEGIC_SYNTHESIS}
+                  {fullResponse.deep_analysis.executive_synthesis.strategic_synthesis}
                 </p>
                 
-                {fullResponse.deep_analysis.executive_synthesis.CONTRADICTIONS?.length > 0 && (
+                {fullResponse.deep_analysis.executive_synthesis.contradictions?.length > 0 && (
                   <>
                     <Separator />
                     <div>
                       <h4 className="font-medium mb-2">Key Contradictions Found</h4>
                       <ul className="space-y-2">
-                        {fullResponse.deep_analysis.executive_synthesis.CONTRADICTIONS.map((c, i) => (
+                        {fullResponse.deep_analysis.executive_synthesis.contradictions.map((c, i) => (
                           <li key={i} className="text-sm">
-                            <span className="font-medium text-destructive">{c.issue}:</span>{" "}
-                            <span className="text-muted-foreground">{c.description}</span>
+                            <span className="font-medium text-destructive">{c.topic || c.issue}:</span>{" "}
+                            <span className="text-muted-foreground">{c.impact || c.description}</span>
                           </li>
                         ))}
                       </ul>
@@ -234,7 +234,7 @@ export default function AuditResultsPage() {
           )}
 
           {/* Mermaid Diagram */}
-          {fullResponse?.deep_analysis?.executive_synthesis?.REALITY_DIAGRAM_MERMAID && (
+          {fullResponse?.deep_analysis?.executive_synthesis?.reality_diagram_mermaid && (
             <Card>
               <CardHeader>
                 <CardTitle>Architecture Reality Check</CardTitle>
@@ -242,7 +242,7 @@ export default function AuditResultsPage() {
               </CardHeader>
               <CardContent>
                 <MermaidRenderer 
-                  chart={fullResponse.deep_analysis.executive_synthesis.REALITY_DIAGRAM_MERMAID} 
+                  chart={fullResponse.deep_analysis.executive_synthesis.reality_diagram_mermaid} 
                 />
               </CardContent>
             </Card>

@@ -33,12 +33,14 @@ export interface Audit {
 }
 
 export interface AuditDetail extends Audit {
-  tech_report: TechReport;
-  legal_report: LegalReport;
-  patch_pack: PatchPack;
-  mermaid?: string;
-  documents: AuditDocument[];
-  comments: Comment[];
+  tech_gaps: any;       // Backend: tech_gaps (JSON)
+  proposal_risks: any;  // Backend: proposal_risks (JSON)
+  contradictions: any;  // Backend: contradictions (JSON)
+  patch_pack: any;      // Backend: patch_pack (JSON)
+  // Missing from backend AuditRecord:
+  // mermaid?: string; 
+  // documents: AuditDocument[];
+  // comments: Comment[];
 }
 
 export interface TechReport {
@@ -181,17 +183,19 @@ export interface AuditsListParams {
 
 export interface AuditHistoryItem {
   id: string;
-  created_at: string | null;
+  created_at: string;
   project_name: string | null;
   audit_type: string;
-  tech_spec_filename: string | null;
   risk_level: string | null;
   composite_risk_score: number | null;
-  status: string;
 }
 
 export interface AuditsListResponse {
+  status: string;
   audits: AuditHistoryItem[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 
 // GET /vector/search
@@ -291,17 +295,24 @@ export interface FullSpectrumResponse extends CouncilSessionResponse {
       negotiation_tips: string[];
     };
     executive_synthesis: {
-      CONTRADICTIONS: Array<{
-        issue: string;
-        description: string;
+      contradictions: Array<{
+        topic: string;
+        document_a_says?: string;
+        document_b_says?: string;
+        impact: string;
+        // Legacy fallback
+        issue?: string;
+        description?: string;
       }>;
-      STRATEGIC_SYNTHESIS: string;
-      REALITY_DIAGRAM_MERMAID: string;
-      PATCH_PACK: {
+      strategic_synthesis: string;
+      reality_diagram_mermaid?: string;
+      patch_pack?: {
         jira_tickets: Array<{
-          summary: string;
-          priority: string;
+          title: string;
           description: string;
+          priority: string;
+          labels: string[];
+          acceptance_criteria: string;
         }>;
         negotiation_email: string;
       };

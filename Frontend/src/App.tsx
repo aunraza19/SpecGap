@@ -10,8 +10,6 @@ import UploadPage from "./pages/UploadPage";
 import AuditsPage from "./pages/AuditsPage";
 import AuditDetailPage from "./pages/AuditDetailPage";
 import AuditResultsPage from "./pages/AuditResultsPage";
-import GlobalSearchPage from "./pages/GlobalSearchPage";
-import SettingsPage from "./pages/SettingsPage";
 import AuthPage from "./pages/AuthPage";
 import NotFound from "./pages/NotFound";
 const queryClient = new QueryClient();
@@ -30,8 +28,8 @@ const App = () => (
             <Route path="/audits" element={<AuditsPage />} />
             <Route path="/audits/:id" element={<AuditDetailPage />} />
             <Route path="/audit/results" element={<AuditResultsPage />} />
-            <Route path="/search" element={<GlobalSearchPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/audit/results" element={<AuditResultsPage />} />
+            <Route path="/audit/results" element={<AuditResultsPage />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>

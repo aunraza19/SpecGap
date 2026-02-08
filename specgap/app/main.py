@@ -171,7 +171,97 @@ async def run_council_session(
         }
 
 
+<<<<<<< Updated upstream
 @app.post("/audit/patch-pack")
+=======
+@app.post("/api/v1/audit/council-session/stream", tags=["Audit"])
+async def stream_council_session(
+    files: List[UploadFile] = File(..., description="Documents to analyze"),
+    domain: str = Query("Software Engineering", description="Domain context")
+):
+    """
+    Stream the Council Session progress via Server-Sent Events (SSE).
+    """
+    from fastapi.responses import StreamingResponse
+    import json
+    import asyncio
+
+    # Pre-process files (non-streaming part)
+    combined_text = ""
+    file_names = []
+    
+    try:
+        for f in files:
+            await f.seek(0)
+            text, _ = await extract_text_from_file(f)
+            combined_text += f"\n=== SOURCE DOCUMENT: {f.filename} ===\n{text}"
+            file_names.append(f.filename)
+    except Exception as e:
+        logger.error(f"File processing failed: {e}")
+        raise HTTPException(status_code=400, detail=f"Failed to read files: {str(e)}")
+
+    logger.info(f"Stream session started for: {file_names}")
+
+    initial_state = {
+        "combined_context": combined_text,
+        "domain": domain,
+        "round_1_drafts": {},
+        "round_2_drafts": {},
+        "round_3_final": {},
+        "patch_pack": {},
+        "errors": {}
+    }
+
+    async def event_generator():
+        try:
+            # Yield initial event
+            yield f"data: {json.dumps({'type': 'stage', 'stage': 'council'})}\n\n"
+            
+            # Start workflow stream
+            # stream_mode="updates" yields the output of each node as it completes
+            async for chunk in council_app.astream(initial_state, stream_mode="updates"):
+                for node_name, node_output in chunk.items():
+                    logger.info(f"Node completed: {node_name}")
+                    
+                    if node_name == "round_1":
+                        yield f"data: {json.dumps({'type': 'stage', 'stage': 'round1'})}\n\n"
+                    elif node_name == "round_2":
+                        yield f"data: {json.dumps({'type': 'stage', 'stage': 'round2'})}\n\n"
+                    elif node_name == "round_3":
+                        yield f"data: {json.dumps({'type': 'stage', 'stage': 'round3'})}\n\n"
+                    elif node_name == "pack_generator":
+                        yield f"data: {json.dumps({'type': 'stage', 'stage': 'synthesis'})}\n\n"
+                        # Also yield the final result
+                        final_payload = {
+                            "status": "success",
+                            "files_analyzed": file_names,
+                            "domain": domain,
+                            "council_verdict": node_output["patch_pack"]
+                        }
+                        yield f"data: {json.dumps({'type': 'complete', 'result': final_payload})}\n\n"
+
+        except Exception as e:
+            logger.error(f"Stream error: {e}", exc_info=True)
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+
+# Legacy endpoint (deprecated, use /api/v1/audit/council-session)
+@app.post("/audit/council-session", tags=["Audit (Legacy)"], deprecated=True)
+async def run_council_session_legacy(
+    files: List[UploadFile] = File(...),
+    domain: str = Query("Software Engineering")
+):
+    """Legacy endpoint - use /api/v1/audit/council-session instead"""
+    return await run_council_session(files, domain)
+
+
+# ============== PATCH PACK ENDPOINT ==============
+
+@app.post("/api/v1/audit/patch-pack", tags=["Audit"])
+>>>>>>> Stashed changes
 async def generate_patch_pack(request: PatchPackRequest):
     
     try:
@@ -256,14 +346,134 @@ async def run_deep_analysis(
 
 
 
+<<<<<<< Updated upstream
 @app.post("/audit/full-spectrum")
+=======
+
+# ============== FULL SPECTRUM ENDPOINT ==============
+
+@app.post("/api/v1/audit/full-spectrum/stream", tags=["Audit"])
+async def stream_full_spectrum(
+    files: List[UploadFile] = File(..., description="Documents to analyze"),
+    domain: str = Query("Software Engineering", description="Domain context")
+):
+    """
+    Stream the Full Spectrum analysis (Council + Deep) via Server-Sent Events (SSE).
+    """
+    from fastapi.responses import StreamingResponse
+    import json
+    
+    # Pre-process files
+    combined_text = ""
+    file_names = []
+    
+    try:
+        for f in files:
+            await f.seek(0)
+            text, _ = await extract_text_from_file(f)
+            combined_text += f"\n=== SOURCE DOCUMENT: {f.filename} ===\n{text}"
+            file_names.append(f.filename)
+    except Exception as e:
+        logger.error(f"File processing failed: {e}")
+        raise HTTPException(status_code=400, detail=f"Failed to read files: {str(e)}")
+
+    logger.info(f"Stream full-spectrum started for: {file_names}")
+
+    council_state = {
+        "combined_context": combined_text,
+        "domain": domain,
+        "round_1_drafts": {},
+        "round_2_drafts": {},
+        "round_3_final": {},
+        "patch_pack": {},
+        "errors": {}
+    }
+
+    async def event_generator():
+        try:
+            # --- PART 1: COUNCIL SESSION ---
+            yield f"data: {json.dumps({'type': 'stage', 'stage': 'council'})}\n\n"
+            
+            council_result = None
+            
+            # Stream Council Steps
+            async for chunk in council_app.astream(council_state, stream_mode="updates"):
+                for node_name, node_output in chunk.items():
+                    if node_name == "round_1":
+                        yield f"data: {json.dumps({'type': 'stage', 'stage': 'round1'})}\n\n"
+                    elif node_name == "round_2":
+                        yield f"data: {json.dumps({'type': 'stage', 'stage': 'round2'})}\n\n"
+                    elif node_name == "round_3":
+                        yield f"data: {json.dumps({'type': 'stage', 'stage': 'round3'})}\n\n"
+                    elif node_name == "pack_generator":
+                        # Council is done
+                        council_result = node_output["patch_pack"]
+            
+            # --- PART 2: DEEP ANALYSIS ---
+            
+            # Tech Audit
+            yield f"data: {json.dumps({'type': 'stage', 'stage': 'tech_audit'})}\n\n"
+            logger.info("[Stream] Starting Tech Audit...")
+            tech_report = await analyze_tech_gaps(combined_text)
+            
+            # Legal Audit
+            yield f"data: {json.dumps({'type': 'stage', 'stage': 'legal_audit'})}\n\n"
+            logger.info("[Stream] Starting Legal Audit...")
+            legal_report = await analyze_proposal_leverage(combined_text)
+            
+            # Synthesis
+            yield f"data: {json.dumps({'type': 'stage', 'stage': 'synthesis'})}\n\n"
+            logger.info("[Stream] Starting Synthesis...")
+            synthesis = await run_cross_check(
+                tech_text=combined_text,
+                proposal_text=combined_text,
+                tech_report=tech_report,
+                legal_report=legal_report
+            )
+            
+            # --- FINAL COMPLETE ---
+            final_payload = {
+                "status": "success",
+                "mode": "full_spectrum",
+                "files_analyzed": file_names,
+                "domain": domain,
+                "council_verdict": council_result,
+                "deep_analysis": {
+                    "tech_audit": tech_report,
+                    "legal_audit": legal_report,
+                    "executive_synthesis": synthesis
+                }
+            }
+            yield f"data: {json.dumps({'type': 'complete', 'result': final_payload})}\n\n"
+
+        except Exception as e:
+            logger.error(f"Stream error: {e}", exc_info=True)
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@app.post("/api/v1/audit/full-spectrum", tags=["Audit"])
+>>>>>>> Stashed changes
 async def run_full_spectrum_analysis(
     files: List[UploadFile] = File(...),
     domain: str = Query("Software Engineering", description="Domain context")
 ):
+<<<<<<< Updated upstream
  
     import asyncio
     
+=======
+    """
+    Full Spectrum Mode: Council + Deep Analysis combined
+    
+    The most comprehensive analysis combining:
+    - Council Session (flashcards for quick decisions)
+    - Deep Analysis (detailed reports)
+    
+    Best for critical contracts and major technical decisions.
+    """
+>>>>>>> Stashed changes
     combined_text = ""
     file_names = []
     file_bytes_cache = {}  # Cache for re-reading

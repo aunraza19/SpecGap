@@ -1,5 +1,6 @@
 import { useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import confetti from 'canvas-confetti';
 import { useNavigate } from "react-router-dom";
 import { 
   Upload, 
@@ -47,17 +48,16 @@ export default function UploadPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [showCouncil, setShowCouncil] = useState(false);
   const [analysisMode, setAnalysisMode] = useState<"quick" | "deep">("quick");
+  const [uploadError, setUploadError] = useState<string | null>(null);
   
   const {
     files,
     projectName,
-    forceOcr,
     domain,
     isUploading,
     addFiles,
     removeFile,
     setProjectName,
-    setForceOcr,
     setDomain,
     updateFileProgress,
     updateFileStatus,
@@ -81,6 +81,17 @@ export default function UploadPage() {
 
   const handleFiles = useCallback((newFiles: FileList | File[]) => {
     const fileArray = Array.from(newFiles);
+    
+    // Check total limit (current files + new files)
+    if (files.length + fileArray.length > 2) {
+      toast({
+        title: "File limit exceeded",
+        description: "You can only upload a maximum of 2 files.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const validFiles: File[] = [];
     
     fileArray.forEach((file) => {
@@ -99,7 +110,7 @@ export default function UploadPage() {
     if (validFiles.length > 0) {
       addFiles(validFiles);
     }
-  }, [addFiles, toast]);
+  }, [files, addFiles, toast]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -123,6 +134,28 @@ export default function UploadPage() {
     }
   }, [handleFiles]);
 
+  const [currentStageId, setCurrentStageId] = useState<string>("upload");
+
+  // ... (existing code)
+
+  // Helper to determine next stage based on completion event
+  const getNextStage = (completedStage: string, mode: "quick" | "deep") => {
+    if (completedStage === 'council') return 'round1';
+    if (completedStage === 'round1') return 'round2';
+    if (completedStage === 'round2') return 'round3';
+    
+    if (mode === "quick") {
+      if (completedStage === 'round3') return 'synthesis';
+    } else {
+      // Deep/Full Spectrum
+      if (completedStage === 'round3') return 'tech_audit';
+      if (completedStage === 'tech_audit') return 'legal_audit';
+      if (completedStage === 'legal_audit') return 'synthesis';
+    }
+    
+    return completedStage; // Fallback
+  };
+
   const handleUpload = async () => {
     if (files.length === 0) {
       toast({
@@ -135,6 +168,7 @@ export default function UploadPage() {
 
     setIsUploading(true);
     setShowCouncil(true);
+    setCurrentStageId("upload"); // Reset to start
 
     // Update file statuses to uploading
     for (const fileProgress of files) {
@@ -153,12 +187,62 @@ export default function UploadPage() {
         updateFileStatus(fileProgress.file.name, "processing");
         addFileLog(fileProgress.file.name, "AI Council is analyzing...");
       }
+      
+      // Advance to first real stage after upload
+      setCurrentStageId("council");
 
-      // Call the real API
-      const response = analysisMode === "deep"
-        ? await auditApi.fullSpectrum(rawFiles, domain)
-        : await auditApi.councilSession(rawFiles, domain);
+      // If Quick Mode, use Streaming
+      if (analysisMode === "quick") {
+        await auditApi.councilSessionStream(rawFiles, domain, (event) => {
+          console.log("Stream Event:", event);
+          
+          if (event.type === 'stage') {
+            const next = getNextStage(event.stage, "quick");
+            setCurrentStageId(next);
+          } else if (event.type === 'complete') {
+            handleAnalysisSuccess(event.result);
+          } else if (event.type === 'error') {
+            throw new Error(event.message);
+          }
+        });
+      } else {
+        // Deep Analysis - Streaming (Full Spectrum)
+        await auditApi.fullSpectrumStream(rawFiles, domain, (event) => {
+           console.log("Deep Stream Event:", event);
+           
+           if (event.type === 'stage') {
+             const next = getNextStage(event.stage, "deep");
+             setCurrentStageId(next);
+           } else if (event.type === 'complete') {
+             handleAnalysisSuccess(event.result);
+           } else if (event.type === 'error') {
+             throw new Error(event.message);
+           }
+        });
+      }
 
+    } catch (error) {
+      console.error("Upload error:", error);
+      const errorMessage = error instanceof Error ? error.message : "Failed to analyze documents. Please try again.";
+      
+      setUploadError(errorMessage);
+      
+      files.forEach((f) => {
+        updateFileStatus(f.file.name, "error");
+        addFileLog(f.file.name, `Error: ${errorMessage}`);
+      });
+
+      setIsUploading(false);
+
+      toast({
+        title: "Analysis Failed",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleAnalysisSuccess = (response: any) => {
       if (response.status === "error") {
         throw new Error(response.message || "Analysis failed");
       }
@@ -177,8 +261,6 @@ export default function UploadPage() {
       const flashcards = response.council_verdict.flashcards || [];
       
       if (flashcards.length === 0) {
-        // Warning but proceed, or throw error?
-        // Let's warn but allow proceeding so user can see "0 issues" state if valid
         console.warn("[Upload] No flashcards generated by backend");
         toast({
           title: "Analysis Complete (0 Issues)",
@@ -197,28 +279,18 @@ export default function UploadPage() {
 
       setIsUploading(false);
 
+      // Trigger Celebration
+      confetti({
+        particleCount: 100,
+        spread: 70,
+        origin: { y: 0.6 },
+        colors: ['#3b82f6', '#10b981', '#f59e0b']
+      });
+
       // Navigate to results page
       setTimeout(() => {
         navigate("/audit/results");
-      }, 500);
-
-    } catch (error) {
-      console.error("Upload error:", error);
-      
-      files.forEach((f) => {
-        updateFileStatus(f.file.name, "error");
-        addFileLog(f.file.name, `Error: ${error instanceof Error ? error.message : "Unknown error"}`);
-      });
-
-      setIsUploading(false);
-      setShowCouncil(false);
-
-      toast({
-        title: "Analysis Failed",
-        description: error instanceof Error ? error.message : "Failed to analyze documents. Please try again.",
-        variant: "destructive",
-      });
-    }
+      }, 1500);
   };
 
 
@@ -389,7 +461,12 @@ export default function UploadPage() {
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
               >
-                <CouncilVisualization isProcessing={isUploading} />
+                <CouncilVisualization 
+                  isProcessing={isUploading} 
+                  error={uploadError} 
+                  currentStageId={currentStageId}
+                  mode={analysisMode}
+                />
               </motion.div>
             )}
           </AnimatePresence>
@@ -438,22 +515,7 @@ export default function UploadPage() {
 
               <Separator />
 
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label htmlFor="force-ocr">Force OCR</Label>
-                  <p className="text-xs text-muted-foreground">
-                    Process scanned documents
-                  </p>
-                </div>
-                <Switch
-                  id="force-ocr"
-                  checked={forceOcr}
-                  onCheckedChange={setForceOcr}
-                  disabled={isUploading}
-                />
-              </div>
-
-              <Separator />
+              {/* Settings removed: Force OCR not supported */}
 
               <div className="space-y-2">
                 <Label>Analysis Mode</Label>

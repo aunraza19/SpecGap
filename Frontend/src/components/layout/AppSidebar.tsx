@@ -3,7 +3,6 @@ import {
   Upload, 
   FileText, 
   Search,
-  Settings,
   Scale,
   Shield,
   TrendingUp,
@@ -25,12 +24,12 @@ import {
   SidebarFooter,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { Separator } from "@/components/ui/separator";
 
 const mainNavItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "Upload Audit", url: "/upload", icon: Upload },
   { title: "All Audits", url: "/audits", icon: FileText },
-  { title: "Global Search", url: "/search", icon: Search },
 ];
 
 const agentItems = [
@@ -49,13 +48,13 @@ export function AppSidebar() {
     <Sidebar collapsible="icon" className="border-r border-sidebar-border">
       <SidebarHeader className="p-4">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-primary">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-primary shadow-sm">
             <Shield className="h-5 w-5 text-primary-foreground" />
           </div>
           {!collapsed && (
             <div className="flex flex-col">
-              <span className="text-lg font-bold text-sidebar-foreground">SpecGap</span>
-              <span className="text-[10px] uppercase tracking-wider text-sidebar-foreground/60">
+              <span className="text-lg font-bold text-sidebar-foreground tracking-tight">SpecGap</span>
+              <span className="text-[10px] uppercase tracking-widest text-sidebar-foreground/50 font-medium">
                 Council Edition
               </span>
             </div>
@@ -65,7 +64,7 @@ export function AppSidebar() {
 
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel className="text-sidebar-foreground/50 text-xs uppercase tracking-wider">
+          <SidebarGroupLabel className="text-sidebar-foreground/40 text-[10px] uppercase tracking-widest font-semibold">
             Navigation
           </SidebarGroupLabel>
           <SidebarGroupContent>
@@ -76,11 +75,11 @@ export function AppSidebar() {
                     <NavLink 
                       to={item.url} 
                       end={item.url === "/"} 
-                      className="flex items-center gap-3 rounded-lg px-3 py-2 text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                      activeClassName="bg-sidebar-accent text-sidebar-primary font-medium"
+                      className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sidebar-foreground/80 transition-all duration-150 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                      activeClassName="bg-sidebar-accent text-sidebar-primary font-medium shadow-sm"
                     >
                       <item.icon className="h-4 w-4 shrink-0" />
-                      {!collapsed && <span>{item.title}</span>}
+                      {!collapsed && <span className="text-sm">{item.title}</span>}
                     </NavLink>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -90,16 +89,18 @@ export function AppSidebar() {
         </SidebarGroup>
 
         <SidebarGroup>
-          <SidebarGroupLabel className="text-sidebar-foreground/50 text-xs uppercase tracking-wider">
+          <SidebarGroupLabel className="text-sidebar-foreground/40 text-[10px] uppercase tracking-widest font-semibold">
             AI Council
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {agentItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
-                  <div className="flex items-center gap-3 px-3 py-2 text-sidebar-foreground/70">
-                    <item.icon className={`h-4 w-4 shrink-0 ${item.color}`} />
-                    {!collapsed && <span className="text-sm">{item.title}</span>}
+                  <div className="flex items-center gap-3 px-3 py-2 text-sidebar-foreground/60 group">
+                    <div className="flex h-6 w-6 items-center justify-center rounded-md bg-sidebar-accent/50">
+                      <item.icon className={`h-3.5 w-3.5 shrink-0 ${item.color}`} />
+                    </div>
+                    {!collapsed && <span className="text-sm group-hover:text-sidebar-foreground/80 transition-colors">{item.title}</span>}
                   </div>
                 </SidebarMenuItem>
               ))}
@@ -110,31 +111,19 @@ export function AppSidebar() {
 
       <SidebarFooter className="p-4 space-y-2">
         {!collapsed && user && (
-          <div className="px-3 py-2 text-xs text-sidebar-foreground/60 truncate">
+          <div className="px-3 py-2.5 text-xs text-sidebar-foreground/50 truncate rounded-lg bg-sidebar-accent/30">
             {user.email}
           </div>
         )}
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton asChild tooltip="Settings">
-              <NavLink 
-                to="/settings" 
-                className="flex items-center gap-3 rounded-lg px-3 py-2 text-sidebar-foreground transition-colors hover:bg-sidebar-accent"
-                activeClassName="bg-sidebar-accent text-sidebar-primary"
-              >
-                <Settings className="h-4 w-4 shrink-0" />
-                {!collapsed && <span>Settings</span>}
-              </NavLink>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          <SidebarMenuItem>
             <SidebarMenuButton
               tooltip="Log Out"
               onClick={() => { logout(); navigate('/auth'); }}
-              className="flex items-center gap-3 rounded-lg px-3 py-2 text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-destructive"
+              className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sidebar-foreground/70 transition-all duration-150 hover:bg-destructive/10 hover:text-destructive"
             >
               <LogOut className="h-4 w-4 shrink-0" />
-              {!collapsed && <span>Log Out</span>}
+              {!collapsed && <span className="text-sm">Log Out</span>}
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

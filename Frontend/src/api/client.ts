@@ -78,6 +78,118 @@ export const auditApi = {
     return data;
   },
 
+  // POST /audit/council-session/stream - Real-time analysis
+  councilSessionStream: async (
+    files: File[],
+    domain: string = 'Software Engineering',
+    onEvent: (event: any) => void
+  ): Promise<void> => {
+    const formData = new FormData();
+    files.forEach((file) => formData.append('files', file));
+
+    const url = `${API_BASE_URL}/audit/council-session/stream?domain=${encodeURIComponent(domain)}`;
+    console.log(`[API] Stream Request: ${url}`);
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        body: formData,
+        // No Content-Type header needed for FormData, browser sets it with boundary
+      });
+
+      if (!response.ok) {
+        throw new Error(`Stream Error: ${response.status}`);
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("Response body is not readable");
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n\n");
+
+        // Process clear lines, keep incomplete one in buffer
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            const jsonStr = line.slice(6);
+            try {
+              const event = JSON.parse(jsonStr);
+              onEvent(event);
+            } catch (e) {
+              console.error("Failed to parse SSE event:", jsonStr, e);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error("[API] Stream failed:", error);
+      throw error;
+    }
+  },
+
+  // POST /audit/full-spectrum/stream
+  fullSpectrumStream: async (
+    files: File[],
+    domain: string = 'Software Engineering',
+    onEvent: (event: any) => void
+  ): Promise<void> => {
+    const formData = new FormData();
+    files.forEach((file) => formData.append('files', file));
+
+    const url = `${API_BASE_URL}/audit/full-spectrum/stream?domain=${encodeURIComponent(domain)}`;
+    console.log(`[API] Stream Request: ${url}`);
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error(`Stream Error: ${response.status}`);
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("Response body is not readable");
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n\n");
+
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            const jsonStr = line.slice(6);
+            try {
+              const event = JSON.parse(jsonStr);
+              onEvent(event);
+            } catch (e) {
+              console.error("Failed to parse SSE event:", jsonStr, e);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error("[API] Stream failed:", error);
+      throw error;
+    }
+  },
+
   // POST /audit/full-spectrum - Deep analysis with full reports
   fullSpectrum: async (files: File[], domain: string = 'Software Engineering'): Promise<FullSpectrumResponse> => {
     const formData = new FormData();

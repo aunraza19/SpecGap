@@ -10,8 +10,8 @@ export function AppLayout() {
       <div className="flex min-h-screen w-full">
         <AppSidebar />
         <SidebarInset className="flex-1">
-          <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background/80 backdrop-blur-sm px-4">
-            <SidebarTrigger className="-ml-1" />
+          <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-border/50 bg-background/80 backdrop-blur-xl px-4">
+            <SidebarTrigger className="-ml-1 hover:bg-muted/80 transition-colors" />
             <Separator orientation="vertical" className="h-4" />
             <Breadcrumbs />
           </header>

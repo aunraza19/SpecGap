@@ -18,21 +18,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useAuditResultStore } from "@/stores/auditResultStore";
 import { auditApi } from "@/api/client";
-
-interface PastAudit {
-  id: string;
-  created_at: string | null;
-  project_name: string | null;
-  audit_type: string;
-  tech_spec_filename: string | null;
-  risk_level: string | null;
-  composite_risk_score: number | null;
-  status: string;
-}
+import type { AuditHistoryItem } from "@/types/api";
 
 export default function AuditsPage() {
   const { flashcards, acceptedCards, rejectedCards, response } = useAuditResultStore();
-  const [pastAudits, setPastAudits] = useState<PastAudit[]>([]);
+  const [pastAudits, setPastAudits] = useState<AuditHistoryItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
@@ -273,7 +263,7 @@ export default function AuditsPage() {
                       </div>
                       <div>
                         <p className="font-medium">
-                          {audit.project_name || audit.tech_spec_filename || "Untitled Audit"}
+                          {audit.project_name || "Untitled Audit"}
                         </p>
                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
                           <Clock className="h-3 w-3" />
@@ -295,8 +285,8 @@ export default function AuditsPage() {
                           Risk: {audit.composite_risk_score}
                         </Badge>
                       )}
-                      <Badge variant={audit.status === "completed" ? "secondary" : "outline"}>
-                        {audit.status}
+                      <Badge variant="secondary">
+                        {audit.audit_type}
                       </Badge>
                     </div>
                   </motion.div>
