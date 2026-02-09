@@ -369,3 +369,135 @@ export const commentsApi = {
     });
   },
 };
+
+
+// ============================================
+// Queue Management Endpoints
+// ============================================
+
+export interface QueueInfo {
+  queue_length: number;
+  is_processing: boolean;
+  estimated_wait_seconds: number;
+  daily_quota: {
+    used: number;
+    limit: number;
+    remaining: number;
+    is_exhausted: boolean;
+    resets_at: string;
+  };
+}
+
+export interface QueueEntry {
+  id: string;
+  session_id: string;
+  status: 'waiting' | 'processing' | 'completed' | 'failed' | 'timeout' | 'cancelled';
+  position: number;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  error_message: string | null;
+  wait_time?: {
+    wait_seconds: number;
+    wait_formatted: string;
+  };
+}
+
+export interface EnqueueResponse {
+  status: string;
+  entry: QueueEntry;
+  queue_info: QueueInfo;
+  message: string;
+}
+
+export const queueApi = {
+  // GET /queue/info - Get current queue status
+  getInfo: async (): Promise<QueueInfo> => {
+    return apiFetch('/queue/info');
+  },
+
+  // POST /queue/enqueue - Join the queue
+  enqueue: async (domain: string = 'Software Engineering'): Promise<EnqueueResponse> => {
+    return apiFetch(`/queue/enqueue?domain=${encodeURIComponent(domain)}`, {
+      method: 'POST',
+    });
+  },
+
+  // GET /queue/status - Get your queue position
+  getStatus: async (): Promise<{ status: string; entry?: QueueEntry; queue_info: QueueInfo; message?: string }> => {
+    return apiFetch('/queue/status');
+  },
+
+  // DELETE /queue/cancel/:entryId - Cancel your queue entry
+  cancel: async (entryId: string): Promise<{ status: string; message: string }> => {
+    return apiFetch(`/queue/cancel/${entryId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  // POST /audit/council-session/queued - Queue-managed streaming analysis (RECOMMENDED)
+  queuedCouncilSessionStream: async (
+    files: File[],
+    domain: string = 'Software Engineering',
+    onEvent: (event: QueueStreamEvent) => void
+  ): Promise<void> => {
+    const formData = new FormData();
+    files.forEach((file) => formData.append('files', file));
+
+    const url = `${API_BASE_URL}/audit/council-session/queued?domain=${encodeURIComponent(domain)}`;
+    console.log(`[API] Queued Stream Request: ${url}`);
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        body: formData,
+        credentials: 'include', // Important: Include cookies for session tracking
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ message: 'Stream Error' }));
+        throw new Error(error.message || `Stream Error: ${response.status}`);
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("Response body is not readable");
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n\n");
+
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            const jsonStr = line.slice(6);
+            try {
+              const event = JSON.parse(jsonStr);
+              onEvent(event);
+            } catch (e) {
+              console.error("Failed to parse SSE event:", jsonStr, e);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error("[API] Queued Stream failed:", error);
+      throw error;
+    }
+  },
+};
+
+// Event types for queued streaming
+export type QueueStreamEvent =
+  | { type: 'queue'; position: number; wait_time: { wait_seconds: number; wait_formatted: string }; queue_info?: QueueInfo }
+  | { type: 'stage'; stage: 'starting' | 'council' | 'round1' | 'round2' | 'round3' | 'synthesis'; message?: string }
+  | { type: 'complete'; result: CouncilSessionResponse }
+  | { type: 'error'; message: string }
+  | { type: 'info'; message: string };
+

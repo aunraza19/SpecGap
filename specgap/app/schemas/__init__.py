@@ -48,6 +48,14 @@ from .responses import (
     # Document
     DocumentClassification,
     FileMetadata,
+
+    # Queue Management
+    QueueStatusEnum,
+    QueueEntryResponse,
+    QueueInfoResponse,
+    EnqueueRequest,
+    EnqueueResponse,
+    QueueErrorResponse,
 )
 
 __all__ = [
@@ -79,5 +87,11 @@ __all__ = [
     "AuditStatistics",
     "DocumentClassification",
     "FileMetadata",
+    "QueueStatusEnum",
+    "QueueEntryResponse",
+    "QueueInfoResponse",
+    "EnqueueRequest",
+    "EnqueueResponse",
+    "QueueErrorResponse",
 ]
 

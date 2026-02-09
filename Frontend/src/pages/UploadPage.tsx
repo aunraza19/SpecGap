@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import confetti from 'canvas-confetti';
 import { useNavigate } from "react-router-dom";
@@ -11,7 +11,10 @@ import {
   CheckCircle2,
   Loader2,
   Settings,
-  Info
+  Info,
+  Clock,
+  Users,
+  Zap
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -26,7 +29,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useUploadStore } from "@/stores/uploadStore";
 import { useAuditResultStore } from "@/stores/auditResultStore";
 import { CouncilVisualization } from "@/components/upload/CouncilVisualization";
-import { auditApi } from "@/api/client";
+import { auditApi, queueApi, type QueueInfo, type QueueStreamEvent } from "@/api/client";
 
 const ACCEPTED_TYPES = [".pdf", ".docx", ".txt"];
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
@@ -50,6 +53,12 @@ export default function UploadPage() {
   const [analysisMode, setAnalysisMode] = useState<"quick" | "deep">("quick");
   const [uploadError, setUploadError] = useState<string | null>(null);
   
+  // Queue management state
+  const [queueInfo, setQueueInfo] = useState<QueueInfo | null>(null);
+  const [queuePosition, setQueuePosition] = useState<number | null>(null);
+  const [queueWaitTime, setQueueWaitTime] = useState<string | null>(null);
+  const [isInQueue, setIsInQueue] = useState(false);
+
   const {
     files,
     projectName,
@@ -67,6 +76,22 @@ export default function UploadPage() {
   } = useUploadStore();
 
   const { setResponse } = useAuditResultStore();
+
+  // Fetch queue info on mount and periodically
+  useEffect(() => {
+    const fetchQueueInfo = async () => {
+      try {
+        const info = await queueApi.getInfo();
+        setQueueInfo(info);
+      } catch (error) {
+        console.error("Failed to fetch queue info:", error);
+      }
+    };
+
+    fetchQueueInfo();
+    const interval = setInterval(fetchQueueInfo, 10000); // Update every 10 seconds
+    return () => clearInterval(interval);
+  }, []);
 
   const validateFile = (file: File): string | null => {
     const extension = `.${file.name.split(".").pop()?.toLowerCase()}`;
@@ -191,18 +216,50 @@ export default function UploadPage() {
       // Advance to first real stage after upload
       setCurrentStageId("council");
 
-      // If Quick Mode, use Streaming
+      // If Quick Mode, use Queue-Managed Streaming
       if (analysisMode === "quick") {
-        await auditApi.councilSessionStream(rawFiles, domain, (event) => {
+        setIsInQueue(true);
+
+        await queueApi.queuedCouncilSessionStream(rawFiles, domain, (event: QueueStreamEvent) => {
           console.log("Stream Event:", event);
           
-          if (event.type === 'stage') {
-            const next = getNextStage(event.stage, "quick");
+          if (event.type === 'queue') {
+            // Update queue position display
+            setQueuePosition(event.position);
+            setQueueWaitTime(event.wait_time?.wait_formatted || null);
+            if (event.queue_info) {
+              setQueueInfo(event.queue_info);
+            }
+
+            // Show toast for queue updates
+            if (event.position > 1) {
+              toast({
+                title: `Queue Position: #${event.position}`,
+                description: `Estimated wait: ${event.wait_time?.wait_formatted || 'calculating...'}`,
+              });
+            } else if (event.position === 1) {
+              toast({
+                title: "You're next!",
+                description: "Analysis will start shortly...",
+              });
+            }
+          } else if (event.type === 'stage') {
+            // Clear queue display when analysis starts
+            if (event.stage === 'starting' || event.stage === 'council') {
+              setIsInQueue(false);
+              setQueuePosition(null);
+              setQueueWaitTime(null);
+            }
+            const next = getNextStage(event.stage === 'starting' ? 'council' : event.stage, "quick");
             setCurrentStageId(next);
           } else if (event.type === 'complete') {
+            setIsInQueue(false);
             handleAnalysisSuccess(event.result);
           } else if (event.type === 'error') {
+            setIsInQueue(false);
             throw new Error(event.message);
+          } else if (event.type === 'info') {
+            console.log("Info:", event.message);
           }
         });
       } else {
@@ -557,6 +614,66 @@ export default function UploadPage() {
             </CardContent>
           </Card>
 
+          {/* Queue Status Card */}
+          {queueInfo && (
+            <Card className={queueInfo.daily_quota.is_exhausted ? "border-destructive/50 bg-destructive/5" : "border-primary/20 bg-primary/5"}>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Users className="h-4 w-4" />
+                  System Status
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">Queue:</span>
+                    <span className="ml-1 font-medium">{queueInfo.queue_length} waiting</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Status:</span>
+                    <span className={`ml-1 font-medium ${queueInfo.is_processing ? 'text-amber-500' : 'text-green-500'}`}>
+                      {queueInfo.is_processing ? 'Busy' : 'Ready'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="text-sm">
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground">Daily Quota:</span>
+                    <span className={`font-medium ${queueInfo.daily_quota.is_exhausted ? 'text-destructive' : ''}`}>
+                      {queueInfo.daily_quota.remaining}/{queueInfo.daily_quota.limit} remaining
+                    </span>
+                  </div>
+                  <Progress
+                    value={(queueInfo.daily_quota.used / queueInfo.daily_quota.limit) * 100}
+                    className="h-1.5 mt-1"
+                  />
+                </div>
+
+                {queueInfo.daily_quota.is_exhausted && (
+                  <div className="text-xs text-destructive flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3" />
+                    Quota resets at midnight UTC
+                  </div>
+                )}
+
+                {isInQueue && queuePosition && (
+                  <div className="p-2 bg-background rounded border animate-pulse">
+                    <div className="flex items-center gap-2">
+                      <Clock className="h-4 w-4 text-primary" />
+                      <span className="font-medium">Position #{queuePosition}</span>
+                    </div>
+                    {queueWaitTime && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Estimated wait: {queueWaitTime}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
           <Card className="bg-primary/5 border-primary/20">
             <CardContent className="p-4">
               <div className="flex gap-3">
@@ -576,16 +693,28 @@ export default function UploadPage() {
             className="w-full bg-gradient-primary hover:opacity-90" 
             size="lg"
             onClick={handleUpload}
-            disabled={files.length === 0 || isUploading}
+            disabled={files.length === 0 || isUploading || queueInfo?.daily_quota.is_exhausted}
           >
             {isUploading ? (
+              isInQueue && queuePosition ? (
+                <>
+                  <Clock className="mr-2 h-4 w-4 animate-pulse" />
+                  Waiting in Queue #{queuePosition}...
+                </>
+              ) : (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Processing...
+                </>
+              )
+            ) : queueInfo?.daily_quota.is_exhausted ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Processing...
+                <AlertCircle className="mr-2 h-4 w-4" />
+                Quota Exhausted
               </>
             ) : (
               <>
-                <Upload className="mr-2 h-4 w-4" />
+                <Zap className="mr-2 h-4 w-4" />
                 Start Audit Analysis
               </>
             )}

@@ -271,3 +271,56 @@ class FileMetadata(BaseModel):
     classification: Optional[DocumentClassification] = Field(default=None)
 
 
+# ============== QUEUE MANAGEMENT SCHEMAS ==============
+
+class QueueStatusEnum(str, Enum):
+    """Status of a queue entry"""
+    WAITING = "waiting"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    TIMEOUT = "timeout"
+    CANCELLED = "cancelled"
+
+
+class QueueEntryResponse(BaseModel):
+    """Response for a queue entry"""
+    id: str = Field(..., description="Unique queue entry ID")
+    session_id: str = Field(..., description="User's session ID")
+    status: QueueStatusEnum = Field(..., description="Current status")
+    position: int = Field(..., description="Position in queue (0 = processing)")
+    created_at: datetime = Field(...)
+    started_at: Optional[datetime] = Field(default=None)
+    completed_at: Optional[datetime] = Field(default=None)
+    error_message: Optional[str] = Field(default=None)
+    wait_time: Optional[dict] = Field(default=None, description="Estimated wait time")
+
+
+class QueueInfoResponse(BaseModel):
+    """Current queue status information"""
+    queue_length: int = Field(..., description="Number of requests waiting")
+    is_processing: bool = Field(..., description="Whether an analysis is currently running")
+    estimated_wait_seconds: int = Field(..., description="Estimated wait time in seconds")
+    daily_quota: dict = Field(..., description="Daily quota information")
+
+
+class EnqueueRequest(BaseModel):
+    """Request to join the analysis queue"""
+    session_id: Optional[str] = Field(default=None, description="Existing session ID (auto-generated if not provided)")
+    domain: str = Field(default="Software Engineering", description="Analysis domain")
+
+
+class EnqueueResponse(BaseModel):
+    """Response after joining the queue"""
+    status: str = Field(...)
+    entry: QueueEntryResponse = Field(...)
+    queue_info: QueueInfoResponse = Field(...)
+    message: str = Field(..., description="User-friendly message")
+
+
+class QueueErrorResponse(BaseModel):
+    """Error response for queue operations"""
+    status: str = Field(default="error")
+    error_code: str = Field(..., description="Error code: QUOTA_EXHAUSTED, ALREADY_QUEUED, etc.")
+    message: str = Field(..., description="User-friendly error message")
+    retry_after_seconds: Optional[int] = Field(default=None, description="When to retry (if applicable)")

@@ -5,11 +5,13 @@ Main FastAPI application with middleware, versioning, and organized routes.
 
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from fastapi import FastAPI, UploadFile, File, HTTPException, Query
+from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Cookie, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import json
+import uuid
+import asyncio
 
 from app.core.config import settings
 from app.core.database import init_db, get_db, get_db_session, AuditRepository
@@ -19,9 +21,14 @@ from app.core.middleware import (
     ErrorHandlingMiddleware,
     AIRateLimitMiddleware,
 )
+from app.core.queue_manager import queue_manager, QueueStatus
 from app.schemas import (
     HealthResponse,
     PatchPackRequest,
+    QueueEntryResponse,
+    QueueInfoResponse,
+    EnqueueResponse,
+    QueueErrorResponse,
 )
 from app.services.parser import extract_text_from_file, compute_file_hash
 from app.services.workflow import council_app
@@ -105,6 +112,194 @@ async def health_check():
 async def api_health():
     """API v1 health check"""
     return await health_check()
+
+
+# ============== QUEUE MANAGEMENT ENDPOINTS ==============
+
+def _get_or_create_session(session_id: Optional[str] = Cookie(default=None)) -> str:
+    """Get existing session ID or create a new one"""
+    if session_id:
+        return session_id
+    return str(uuid.uuid4())
+
+
+@app.get("/api/v1/queue/info", response_model=QueueInfoResponse, tags=["Queue"])
+async def get_queue_info():
+    """
+    Get current queue status and daily quota information.
+
+    Use this to check if the system is available before starting an analysis.
+    """
+    info = queue_manager.get_queue_info()
+    return QueueInfoResponse(**info)
+
+
+@app.post("/api/v1/queue/enqueue", tags=["Queue"])
+async def enqueue_analysis(
+    response: Response,
+    session_id: Optional[str] = Cookie(default=None),
+    domain: str = Query("Software Engineering", description="Analysis domain")
+):
+    """
+    Join the analysis queue.
+
+    Returns your queue position and estimated wait time.
+    If you already have a pending analysis, returns that entry instead.
+
+    The session_id cookie is used to track your position.
+    Don't clear cookies while waiting!
+    """
+    # Get or create session
+    sid = _get_or_create_session(session_id)
+
+    # Set session cookie if new
+    if not session_id:
+        response.set_cookie(
+            key="session_id",
+            value=sid,
+            httponly=True,
+            max_age=86400,  # 24 hours
+            samesite="lax"
+        )
+
+    try:
+        entry = await queue_manager.enqueue(sid)
+        queue_info = queue_manager.get_queue_info()
+        wait_time = queue_manager.get_position_eta(entry.position)
+
+        if entry.position == 1 and not queue_info["is_processing"]:
+            message = "You're next! Analysis will start shortly."
+        elif entry.position == 1:
+            message = f"You're next! Estimated wait: {wait_time['wait_formatted']}"
+        else:
+            message = f"You're #{entry.position} in queue. Estimated wait: {wait_time['wait_formatted']}"
+
+        return {
+            "status": "queued",
+            "entry": {
+                "id": entry.id,
+                "session_id": entry.session_id,
+                "status": entry.status.value,
+                "position": entry.position,
+                "created_at": entry.created_at.isoformat(),
+                "started_at": None,
+                "completed_at": None,
+                "error_message": None,
+                "wait_time": wait_time
+            },
+            "queue_info": queue_info,
+            "message": message
+        }
+
+    except ValueError as e:
+        # Already has a pending analysis
+        existing = await queue_manager.get_session_status(sid)
+        if existing:
+            wait_time = queue_manager.get_position_eta(existing.position)
+            return {
+                "status": "already_queued",
+                "entry": {
+                    "id": existing.id,
+                    "session_id": existing.session_id,
+                    "status": existing.status.value,
+                    "position": existing.position,
+                    "created_at": existing.created_at.isoformat(),
+                    "started_at": existing.started_at.isoformat() if existing.started_at else None,
+                    "completed_at": existing.completed_at.isoformat() if existing.completed_at else None,
+                    "error_message": existing.error_message,
+                    "wait_time": wait_time
+                },
+                "queue_info": queue_manager.get_queue_info(),
+                "message": str(e)
+            }
+        raise HTTPException(status_code=400, detail=str(e))
+
+    except RuntimeError as e:
+        # Quota exhausted
+        queue_info = queue_manager.get_queue_info()
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "status": "error",
+                "error_code": "QUOTA_EXHAUSTED",
+                "message": str(e),
+                "queue_info": queue_info
+            }
+        )
+
+
+@app.get("/api/v1/queue/status", tags=["Queue"])
+async def get_my_queue_status(
+    session_id: Optional[str] = Cookie(default=None)
+):
+    """
+    Get your current queue position and status.
+
+    Requires the session_id cookie from when you joined the queue.
+    """
+    if not session_id:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "status": "error",
+                "error_code": "NO_SESSION",
+                "message": "No session ID found. Please enqueue first."
+            }
+        )
+
+    entry = await queue_manager.get_session_status(session_id)
+
+    if not entry:
+        return {
+            "status": "not_found",
+            "message": "No pending analysis found for your session.",
+            "queue_info": queue_manager.get_queue_info()
+        }
+
+    wait_time = queue_manager.get_position_eta(entry.position)
+
+    return {
+        "status": "found",
+        "entry": {
+            "id": entry.id,
+            "session_id": entry.session_id,
+            "status": entry.status.value,
+            "position": entry.position,
+            "created_at": entry.created_at.isoformat(),
+            "started_at": entry.started_at.isoformat() if entry.started_at else None,
+            "completed_at": entry.completed_at.isoformat() if entry.completed_at else None,
+            "error_message": entry.error_message,
+            "wait_time": wait_time
+        },
+        "queue_info": queue_manager.get_queue_info()
+    }
+
+
+@app.delete("/api/v1/queue/cancel/{entry_id}", tags=["Queue"])
+async def cancel_queue_entry(
+    entry_id: str,
+    session_id: Optional[str] = Cookie(default=None)
+):
+    """
+    Cancel your queued analysis.
+
+    Cannot cancel an analysis that is already processing.
+    """
+    if not session_id:
+        raise HTTPException(status_code=400, detail="No session ID found")
+
+    success = await queue_manager.cancel(entry_id, session_id)
+
+    if success:
+        return {
+            "status": "cancelled",
+            "message": "Your queued analysis has been cancelled."
+        }
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot cancel - entry not found or already processing."
+        )
 
 
 # ============== COUNCIL SESSION ENDPOINT ==============
@@ -269,6 +464,196 @@ async def run_council_session_legacy(
 ):
     """Legacy endpoint - use /api/v1/audit/council-session instead"""
     return await run_council_session(files, domain)
+
+
+# ============== QUEUE-MANAGED COUNCIL SESSION (RECOMMENDED) ==============
+
+@app.post("/api/v1/audit/council-session/queued", tags=["Audit"])
+async def queued_council_session(
+    response: Response,
+    files: List[UploadFile] = File(..., description="Documents to analyze"),
+    domain: str = Query("Software Engineering", description="Domain context"),
+    session_id: Optional[str] = Cookie(default=None)
+):
+    """
+    Queue-managed Council Session with SSE streaming.
+
+    This is the RECOMMENDED endpoint for production use as it:
+    1. Respects free tier API rate limits
+    2. Ensures fair access for all users
+    3. Prevents system overload
+
+    Flow:
+    1. Request joins queue (or uses existing queue position)
+    2. SSE stream shows queue position updates
+    3. When it's your turn, analysis begins
+    4. Progress updates stream in real-time
+    5. Final results delivered via SSE
+
+    Events sent:
+    - `queue`: Queue position updates (position, wait_time)
+    - `stage`: Processing stage (round1, round2, round3, synthesis)
+    - `complete`: Final results
+    - `error`: Error message
+    """
+    # Get or create session
+    sid = session_id or str(uuid.uuid4())
+
+    # Set session cookie if new
+    if not session_id:
+        response.set_cookie(
+            key="session_id",
+            value=sid,
+            httponly=True,
+            max_age=86400,
+            samesite="lax"
+        )
+
+    # Pre-process files first (before joining queue)
+    combined_text = ""
+    file_names = []
+
+    try:
+        for f in files:
+            await f.seek(0)
+            text, _ = await extract_text_from_file(f)
+            combined_text += f"\n=== SOURCE DOCUMENT: {f.filename} ===\n{text}"
+            file_names.append(f.filename)
+    except Exception as e:
+        logger.error(f"File processing failed: {e}")
+        raise HTTPException(status_code=400, detail=f"Failed to read files: {str(e)}")
+
+    # Check quota before accepting
+    queue_info = queue_manager.get_queue_info()
+    if queue_info["daily_quota"]["is_exhausted"]:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "status": "error",
+                "error_code": "QUOTA_EXHAUSTED",
+                "message": f"Daily quota exhausted ({queue_info['daily_quota']['used']}/{queue_info['daily_quota']['limit']}). Resets at midnight UTC.",
+                "queue_info": queue_info
+            }
+        )
+
+    async def event_generator():
+        entry = None
+        try:
+            # Try to enqueue
+            try:
+                entry = await queue_manager.enqueue(sid)
+                logger.info(f"Queued session {entry.id} for {file_names}, position {entry.position}")
+            except ValueError as e:
+                # Already has an entry - check if it's completed
+                existing = await queue_manager.get_session_status(sid)
+                if existing and existing.status in [QueueStatus.COMPLETED, QueueStatus.FAILED, QueueStatus.TIMEOUT]:
+                    # Previous entry is done, clean it up and try again
+                    yield f"data: {json.dumps({'type': 'info', 'message': 'Previous session found, starting new analysis'})}\n\n"
+                    # The queue manager should allow re-queue now
+                    await asyncio.sleep(0.5)
+                    entry = await queue_manager.enqueue(sid)
+                elif existing:
+                    entry = existing
+                    yield f"data: {json.dumps({'type': 'info', 'message': 'Resuming existing queue position'})}\n\n"
+                else:
+                    raise
+
+            # Send initial queue status
+            wait_time = queue_manager.get_position_eta(entry.position)
+            yield f"data: {json.dumps({'type': 'queue', 'position': entry.position, 'wait_time': wait_time, 'queue_info': queue_manager.get_queue_info()})}\n\n"
+
+            # Wait for our turn
+            while True:
+                # Check if we can start
+                next_entry = await queue_manager.get_next()
+
+                if next_entry and next_entry.id == entry.id:
+                    # It's our turn!
+                    entry = next_entry
+                    logger.info(f"Starting analysis for {entry.id}")
+                    yield f"data: {json.dumps({'type': 'stage', 'stage': 'starting', 'message': 'Your analysis is starting!'})}\n\n"
+                    break
+                elif next_entry:
+                    # Someone else got it, put it back (shouldn't happen in single-thread)
+                    pass
+
+                # Still waiting - check our current position
+                current_entry = await queue_manager.get_session_status(sid)
+                if current_entry:
+                    if current_entry.status == QueueStatus.PROCESSING:
+                        # We're processing (recovered from another check)
+                        entry = current_entry
+                        break
+
+                    wait_time = queue_manager.get_position_eta(current_entry.position)
+                    yield f"data: {json.dumps({'type': 'queue', 'position': current_entry.position, 'wait_time': wait_time})}\n\n"
+
+                # Wait before checking again
+                await asyncio.sleep(3)
+
+            # === NOW PROCESS THE ANALYSIS ===
+            yield f"data: {json.dumps({'type': 'stage', 'stage': 'council'})}\n\n"
+
+            initial_state = {
+                "combined_context": combined_text,
+                "domain": domain,
+                "round_1_drafts": {},
+                "round_2_drafts": {},
+                "round_3_final": {},
+                "patch_pack": {},
+                "errors": {}
+            }
+
+            # Stream the council workflow
+            async for chunk in council_app.astream(initial_state, stream_mode="updates"):
+                for node_name, node_output in chunk.items():
+                    logger.info(f"Node completed: {node_name}")
+
+                    if node_name == "round_1":
+                        yield f"data: {json.dumps({'type': 'stage', 'stage': 'round1'})}\n\n"
+                    elif node_name == "round_2":
+                        yield f"data: {json.dumps({'type': 'stage', 'stage': 'round2'})}\n\n"
+                    elif node_name == "round_3":
+                        yield f"data: {json.dumps({'type': 'stage', 'stage': 'round3'})}\n\n"
+                    elif node_name == "pack_generator":
+                        yield f"data: {json.dumps({'type': 'stage', 'stage': 'synthesis'})}\n\n"
+
+                        # Save to database
+                        try:
+                            with get_db_session() as db:
+                                AuditRepository.create_audit(
+                                    db,
+                                    audit_type="council_session",
+                                    patch_pack=node_output.get("patch_pack"),
+                                    tech_spec_filename=",".join(file_names),
+                                    project_name=file_names[0] if file_names else "Untitled"
+                                )
+                        except Exception as db_error:
+                            logger.warning(f"Failed to save audit: {db_error}")
+
+                        # Send final result
+                        final_payload = {
+                            "status": "success",
+                            "files_analyzed": file_names,
+                            "domain": domain,
+                            "council_verdict": node_output.get("patch_pack", {})
+                        }
+                        yield f"data: {json.dumps({'type': 'complete', 'result': final_payload})}\n\n"
+
+            # Mark as completed
+            await queue_manager.complete(entry.id, success=True)
+            logger.info(f"Completed analysis for {entry.id}")
+
+        except Exception as e:
+            logger.error(f"Queued session error: {e}", exc_info=True)
+
+            # Mark as failed if we had an entry
+            if entry:
+                await queue_manager.complete(entry.id, success=False, error=str(e))
+
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 # ============== PATCH PACK ENDPOINT ==============
