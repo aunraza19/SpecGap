@@ -6,3 +6,4 @@ export { RedlineEditor } from "./RedlineEditor";
 export { CommentsPanel } from "./CommentsPanel";
 export { FlashcardView } from "./FlashcardView";
 export { FlashcardStack } from "./FlashcardStack";
+export { DeepAnalysisView } from "./DeepAnalysisView";
