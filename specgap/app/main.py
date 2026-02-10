@@ -5,13 +5,16 @@ Main FastAPI application with middleware, versioning, and organized routes.
 
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Cookie, Response
+from pathlib import Path
+from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Cookie, Response, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from typing import List, Dict, Any, Optional
 import json
 import uuid
 import asyncio
+import os
 
 from app.core.config import settings
 from app.core.database import init_db, get_db, get_db_session, AuditRepository
@@ -96,9 +99,9 @@ app.add_middleware(RequestTrackingMiddleware)
 
 # ============== HEALTH & INFO ENDPOINTS ==============
 
-@app.get("/", response_model=HealthResponse, tags=["Health"])
+@app.api_route("/health", methods=["GET", "HEAD"], response_model=HealthResponse, tags=["Health"])
 async def health_check():
-    """Health check endpoint"""
+    """Health check endpoint (supports HEAD for Render)"""
     return HealthResponse(
         status="active",
         system="SpecGap Council (MVP)",
@@ -108,7 +111,7 @@ async def health_check():
     )
 
 
-@app.get("/api/v1/health", response_model=HealthResponse, tags=["Health"])
+@app.api_route("/api/v1/health", methods=["GET", "HEAD"], response_model=HealthResponse, tags=["Health"])
 async def api_health():
     """API v1 health check"""
     return await health_check()
@@ -1130,4 +1133,39 @@ async def get_audit_legacy(audit_id: str):
             "proposal_risks": audit.proposal_risks,
             "contradictions": audit.contradictions
         }
+
+
+# ============== STATIC FILES (FRONTEND) ==============
+
+# Serve frontend static files in production
+# The frontend is built and copied to /app/static during Docker build
+STATIC_DIR = Path("/app/static")
+
+if STATIC_DIR.exists():
+    logger.info(f"Serving frontend from {STATIC_DIR}")
+
+    # Mount static assets (js, css, images)
+    app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
+
+    # Catch-all route for SPA - must be last!
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_spa(request: Request, full_path: str):
+        """Serve the React SPA for any non-API routes"""
+        # Skip API routes
+        if full_path.startswith("api/") or full_path.startswith("docs") or full_path.startswith("redoc") or full_path.startswith("openapi"):
+            raise HTTPException(status_code=404, detail="Not found")
+
+        # Try to serve the requested file
+        file_path = STATIC_DIR / full_path
+        if file_path.exists() and file_path.is_file():
+            return FileResponse(file_path)
+
+        # Otherwise serve index.html for SPA routing
+        index_path = STATIC_DIR / "index.html"
+        if index_path.exists():
+            return FileResponse(index_path)
+
+        raise HTTPException(status_code=404, detail="Frontend not found")
+else:
+    logger.info("No static frontend found - API-only mode")
 

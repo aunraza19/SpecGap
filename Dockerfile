@@ -1,7 +1,7 @@
 # ============================================
 # SpecGap - Multi-stage Docker Build
 # Backend: FastAPI + Python
-# Frontend: React + Vite (served via nginx)
+# Frontend: React + Vite (served by FastAPI)
 # ============================================
 
 # ============== STAGE 1: Frontend Build ==============
@@ -18,11 +18,14 @@ RUN npm ci --legacy-peer-deps || npm install --legacy-peer-deps
 # Copy frontend source
 COPY Frontend/ ./
 
-# Build for production with API URL
-ARG VITE_API_URL=/api
-ENV VITE_API_URL=${VITE_API_URL}
+# Build for production
+# Note: In production, API calls go to same origin /api/v1
+ENV VITE_API_URL=/api
 
 RUN npm run build
+
+# Verify build output
+RUN ls -la dist/ && ls -la dist/assets/ || true
 
 
 # ============== STAGE 2: Python Backend ==============
@@ -43,7 +46,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     poppler-utils \
     tesseract-ocr \
-    nginx \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
@@ -54,28 +56,21 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy backend code
 COPY specgap/ ./specgap/
 
-# Copy built frontend from stage 1
+# Copy built frontend from stage 1 to /app/static
 COPY --from=frontend-builder /app/frontend/dist /app/static
 
-# Copy nginx config
-COPY nginx.conf /etc/nginx/nginx.conf
-
-# Copy startup script
-COPY docker-entrypoint.sh /app/docker-entrypoint.sh
-RUN chmod +x /app/docker-entrypoint.sh
+# Verify static files exist
+RUN echo "=== Static files ===" && ls -la /app/static/ && ls -la /app/static/assets/ || echo "No assets folder"
 
 # Create non-root user for security
 RUN adduser --disabled-password --gecos '' appuser && \
-    chown -R appuser:appuser /app && \
-    chown -R appuser:appuser /var/log/nginx && \
-    chown -R appuser:appuser /var/lib/nginx && \
-    chown -R appuser:appuser /run
+    chown -R appuser:appuser /app
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/api/v1/health || exit 1
+    CMD curl -f http://localhost:8000/health || exit 1
 
-# Expose ports
+# Expose port
 EXPOSE 8000
 
 # Set workdir to specgap for running the app
@@ -84,6 +79,6 @@ WORKDIR /app/specgap
 # Run as non-root user
 USER appuser
 
-# Start both nginx and uvicorn
-ENTRYPOINT ["/app/docker-entrypoint.sh"]
+# Start uvicorn directly
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
 

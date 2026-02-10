@@ -10,8 +10,8 @@ services:
     region: oregon  # or singapore, frankfurt, ohio
     plan: free  # free, starter, standard, pro
 
-    # Health check
-    healthCheckPath: /api/v1/health
+    # Health check - use dedicated health endpoint
+    healthCheckPath: /health
 
     # Environment variables
     envVars:
