@@ -17,7 +17,12 @@ import type {
   FullSpectrumResponse,
 } from '@/types/api';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+// In development, Vite proxy rewrites /api to /api/v1
+// In production (Docker), we call /api/v1 directly
+const isDev = import.meta.env.DEV;
+const API_BASE_URL = isDev
+  ? (import.meta.env.VITE_API_URL || '/api')
+  : '/api/v1';
 
 // ============================================
 // Base Fetch Wrapper

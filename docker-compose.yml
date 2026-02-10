@@ -1,0 +1,42 @@
+# docker-compose.yml
+# For local development and testing
+# Run: docker-compose up --build
+
+version: '3.8'
+
+services:
+  specgap:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      # Copy your .env values here or use env_file
+      - ENV=development
+      - DEBUG=true
+      - LOG_LEVEL=INFO
+      - CORS_ORIGINS=*
+      - DATABASE_URL=sqlite:///./specgap_audits.db
+      # API Keys - set these!
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GEMINI_API_KEY_ROUND1=${GEMINI_API_KEY_ROUND1:-}
+      - GEMINI_API_KEY_ROUND2=${GEMINI_API_KEY_ROUND2:-}
+      - GEMINI_API_KEY_ROUND3=${GEMINI_API_KEY_ROUND3:-}
+      # Queue settings
+      - QUEUE_ENABLED=true
+      - MAX_CONCURRENT_SESSIONS=1
+    volumes:
+      # Persist database
+      - specgap-data:/app/specgap
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  specgap-data:
+
